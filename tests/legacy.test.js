@@ -45,13 +45,13 @@ test('converts a legacy trident with a mirrored child to one main layer', () => 
     children: {},
   });
   assert.deepEqual(convertLegacy({ 'minecraft:trident': { trident: part } }, {}), {
-    records: [{ kind: 'entity', model }],
+    records: [model],
     skipped: 0,
     mixedTextureSizes: 0,
   });
 });
 
-test('inherits a legacy part texture override through its children', () => {
+test('inherits and resets a legacy part texture override through its children', () => {
   const part = {
     textureWidth: 16,
     textureHeight: 16,
@@ -69,11 +69,25 @@ test('inherits a legacy part texture override through its children', () => {
   };
   const model = convertModel('minecraft:conduit', {
     shell: { ...part, textureWidth: 64, textureHeight: 32 },
-    eye: { ...part, children: [{ ...part, children: [] }] },
+    eye: {
+      ...part,
+      children: [
+        { ...part, children: [] },
+        {
+          ...part,
+          textureWidth: 64,
+          textureHeight: 32,
+          children: [{ ...part, textureWidth: 64, textureHeight: 32, children: [] }],
+        },
+      ],
+    },
   });
   assert.deepEqual(model.layers.main.texture, [64, 32]);
   assert.equal(Object.hasOwn(model.layers.main.root.children.shell, 'texture'), false);
   assert.deepEqual(model.layers.main.root.children.eye.texture, [16, 16]);
   assert.equal(Object.hasOwn(model.layers.main.root.children.eye.children['0'], 'texture'), false);
+  const reset = model.layers.main.root.children.eye.children['1'];
+  assert.deepEqual(reset.texture, [64, 32]);
+  assert.equal(Object.hasOwn(reset.children['0'], 'texture'), false);
   assert.equal(convertModel('minecraft:beacon', {}), null);
 });

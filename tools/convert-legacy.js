@@ -41,13 +41,10 @@ function sameTexture(left, right) {
   return left[0] === right[0] && left[1] === right[1];
 }
 
-function convertPart(part, id, layerTexture, inheritedTexture = layerTexture) {
+function convertPart(part, id, inheritedTexture) {
   const children = childrenOf(part, id);
   const partTexture = [part.textureWidth, part.textureHeight];
   const overrideTexture = part.cubes.length > 0 && !sameTexture(partTexture, inheritedTexture);
-  if (overrideTexture && sameTexture(partTexture, layerTexture)) {
-    throw new Error(`Legacy texture inheritance requires a layer-size override in ${id}`);
-  }
   const effectiveTexture = overrideTexture ? partTexture : inheritedTexture;
   return {
     ...(overrideTexture ? { texture: partTexture } : {}),
@@ -61,7 +58,7 @@ function convertPart(part, id, layerTexture, inheritedTexture = layerTexture) {
       uv: [part.textureOffsetU, part.textureOffsetV],
       ...(part.mirror ? { mirror: true } : {}),
     })),
-    children: Object.fromEntries(children.map((child, index) => [String(index), convertPart(child, id, layerTexture, effectiveTexture)])),
+    children: Object.fromEntries(children.map((child, index) => [String(index), convertPart(child, id, effectiveTexture)])),
   };
 }
 
@@ -108,7 +105,7 @@ export function convertLegacy(entityDump, blockEntityDump) {
         continue;
       }
       if (mixed) mixedTextureSizes++;
-      records.push({ kind, model });
+      records.push(model);
     }
   }
   return { records, skipped, mixedTextureSizes };

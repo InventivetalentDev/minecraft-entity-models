@@ -36,7 +36,7 @@ function vector(value, length) {
   }
 }
 
-function part(value, layerTexture) {
+function part(value, inheritedTexture) {
   object(value, ['pose', 'cubes', 'children'], ['texture']);
   object(value.pose, ['offset', 'rotation'], ['scale']);
   vector(value.pose.offset, 3);
@@ -48,7 +48,7 @@ function part(value, layerTexture) {
   if (Object.hasOwn(value, 'texture')) {
     vector(value.texture, 2);
     if (value.texture.some(number => number < 0)) throw new Error('Texture dimensions must be nonnegative');
-    if (value.texture.every((number, index) => number === layerTexture[index])) throw new Error('Omit part texture matching the layer');
+    if (value.texture.every((number, index) => number === inheritedTexture[index])) throw new Error('Omit part texture matching the inherited size');
   }
   if (!Array.isArray(value.cubes)) throw new Error('Expected cubes array');
   for (const cube of value.cubes) {
@@ -63,7 +63,7 @@ function part(value, layerTexture) {
     if (Object.hasOwn(cube, 'mirror') && cube.mirror !== true) throw new Error('Omit false mirror');
   }
   if (!value.children || typeof value.children !== 'object' || Array.isArray(value.children)) throw new Error('Expected children object');
-  for (const child of Object.values(value.children)) part(child, layerTexture);
+  for (const child of Object.values(value.children)) part(child, value.texture ?? inheritedTexture);
 }
 
 export function validateModel(model) {
@@ -92,15 +92,12 @@ export async function writeLists(directory) {
 export async function writeDataset(output, versionMetadata, records) {
   if (!versionMetadata || typeof versionMetadata.id !== 'string') throw new Error('Missing version id');
   const files = new Map();
-  const counts = { entity: 0, block_entity: 0 };
-  for (const { kind, model } of records) {
-    if (!Object.hasOwn(counts, kind)) throw new Error(`Invalid model kind: ${kind}`);
+  for (const model of records) {
     try { validateModel(model); } catch (error) { throw new Error(`${model?.id}: ${error.message}`); }
     const { namespace, name } = modelPath(model.id);
-    const file = path.join(namespace, kind, `${name}.json`);
+    const file = path.join(namespace, `${name}.json`);
     if (files.has(file)) throw new Error(`Duplicate model: ${model.id}`);
     files.set(file, stableStringify(model));
-    counts[kind]++;
   }
   await mkdir(path.dirname(path.resolve(output)), { recursive: true });
   try {
@@ -109,12 +106,12 @@ export async function writeDataset(output, versionMetadata, records) {
     if (error.code === 'EEXIST') throw new Error(`Output directory already exists: ${output}`);
     throw error;
   }
-  for (const kind of Object.keys(counts)) await mkdir(path.join(output, 'minecraft', kind), { recursive: true });
+  await mkdir(path.join(output, 'minecraft'), { recursive: true });
   for (const [file, contents] of files) {
     await mkdir(path.dirname(path.join(output, file)), { recursive: true });
     await writeFile(path.join(output, file), contents);
   }
   await writeFile(path.join(output, 'version.json'), stableStringify(versionMetadata));
   await writeLists(output);
-  return counts;
+  return files.size;
 }

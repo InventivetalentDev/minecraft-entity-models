@@ -36,8 +36,8 @@ async function directory(t) {
 test('generated model preserves geometry and validates against the schema', async t => {
   const output = await directory(t);
   const expected = model();
-  await writeDataset(output, { id: '1.21.11' }, [{ kind: 'entity', model: expected }]);
-  const text = await readFile(path.join(output, 'minecraft/entity/cow.json'), 'utf8');
+  assert.equal(await writeDataset(output, { id: '1.21.11' }, [expected]), 1);
+  const text = await readFile(path.join(output, 'minecraft/cow.json'), 'utf8');
   const generated = JSON.parse(text);
   assert.deepEqual(validateModel(generated), expected);
   assert.equal(text, stableStringify(expected));
@@ -64,14 +64,22 @@ test('schema rejects malformed geometry and redundant optional fields', () => {
 test('directory listings include sorted files and nested directories without themselves', async t => {
   const output = await directory(t);
   await writeDataset(output, { id: '1.21.11' }, [
-    { kind: 'entity', model: model('minecraft:zombie') },
-    { kind: 'entity', model: model('minecraft:cow') },
-    { kind: 'entity', model: model('minecraft:boat/oak') },
+    model('minecraft:zombie'),
+    model('minecraft:cow'),
+    model('minecraft:boat/oak'),
   ]);
   const listing = async relative => JSON.parse(await readFile(path.join(output, relative, '_list.json'), 'utf8'));
   assert.deepEqual(await listing(''), { directories: ['minecraft'], files: ['version.json'] });
-  assert.deepEqual(await listing('minecraft'), { directories: ['block_entity', 'entity'], files: [] });
-  assert.deepEqual(await listing('minecraft/entity'), { directories: ['boat'], files: ['cow.json', 'zombie.json'] });
-  assert.deepEqual(await listing('minecraft/entity/boat'), { directories: [], files: ['oak.json'] });
-  assert.deepEqual(await listing('minecraft/block_entity'), { directories: [], files: [] });
+  assert.deepEqual(await listing('minecraft'), { directories: ['boat'], files: ['cow.json', 'zombie.json'] });
+  assert.deepEqual(await listing('minecraft/boat'), { directories: [], files: ['oak.json'] });
+});
+
+test('a child below a texture override may restate the layer size', () => {
+  const value = model();
+  value.layers.main.root.texture = [32, 32];
+  const child = value.layers.main.root.children.head;
+  child.texture = [64, 32];
+  assert.equal(validateModel(value), value);
+  child.texture = [32, 32];
+  assert.throws(() => validateModel(value), /matching the inherited size/);
 });

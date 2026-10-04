@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { validateModel } from './lib.js';
 
-function git(cwd, args, { input, allowFailure = false } = {}) {
-  const result = spawnSync('git', args, { cwd, input, encoding: 'utf8' });
+function git(cwd, args, { allowFailure = false } = {}) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   if (result.error) throw result.error;
   if (result.status !== 0 && !allowFailure) {
     throw new Error((result.stderr || result.stdout || 'Git command failed.').trim().replace(/\s+/g, ' '));
@@ -31,9 +31,7 @@ async function validateInput(input, version) {
       const name = relative ? `${relative}/${entry.name}` : entry.name;
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        const parts = name.split('/');
-        if (!/^[a-z0-9_.-]+$/.test(entry.name) || entry.name === '.git'
-            || (parts.length === 2 && !['entity', 'block_entity'].includes(entry.name))) {
+        if (!/^[a-z0-9_.-]+$/.test(entry.name) || entry.name === '.git') {
           throw new Error(`Unexpected directory: ${name}`);
         }
         directories.push(entry.name);
@@ -46,14 +44,14 @@ async function validateInput(input, version) {
           if (data?.id !== version) throw new Error('version.json does not match --version.');
           continue;
         }
-        const match = /^([a-z0-9_.-]+)\/(entity|block_entity)\/([a-z0-9_./-]+)\.json$/.exec(name);
+        const match = /^([a-z0-9_.-]+)\/([a-z0-9_./-]+)\.json$/.exec(name);
         if (!match) throw new Error(`Unexpected file: ${name}`);
         try {
           validateModel(data);
         } catch (error) {
           throw new Error(`${name}: ${error.message}`);
         }
-        if (data.id !== `${match[1]}:${match[3]}`) throw new Error(`Model id does not match its path: ${name}`);
+        if (data.id !== `${match[1]}:${match[2]}`) throw new Error(`Model id does not match its path: ${name}`);
         models += 1;
       } else {
         throw new Error(`Input must contain only regular files and directories: ${name}`);
@@ -91,16 +89,7 @@ async function main() {
   await validateInput(input, version);
   const repository = git(process.cwd(), ['rev-parse', '--show-toplevel']).output;
   const existing = git(repository, ['show-ref', '--verify', '--quiet', `refs/heads/${version}`], { allowFailure: true }).ok;
-  let start = version;
-  if (!existing) {
-    const head = git(repository, ['rev-parse', '--verify', 'HEAD'], { allowFailure: true });
-    if (head.ok) {
-      start = head.output;
-    } else {
-      const tree = git(repository, ['hash-object', '-w', '-t', 'tree', '--stdin'], { input: '' }).output;
-      start = git(repository, ['commit-tree', tree, '-m', 'Initialize publication worktree']).output;
-    }
-  }
+  const start = existing ? version : git(repository, ['rev-parse', '--verify', 'HEAD']).output;
   const temporary = await mkdtemp(path.join(tmpdir(), 'minecraft-entity-models-publish-'));
   const worktree = path.join(temporary, 'worktree');
   let added = false;

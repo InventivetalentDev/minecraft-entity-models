@@ -6,10 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.model.geom.LayerDefinitions;
@@ -18,7 +16,6 @@ import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
 import net.minecraft.client.model.geom.builders.UVPair;
-import net.minecraft.core.Registry;
 import net.minecraft.server.Bootstrap;
 
 public class Extract {
@@ -29,7 +26,6 @@ public class Extract {
             }
             SharedConstants.tryDetectVersion();
             Bootstrap.bootStrap();
-            Set<String> blockEntities = blockEntities();
             Map<String, Map<String, Object>> models = new TreeMap<>();
             Map<ModelLayerLocation, LayerDefinition> roots = LayerDefinitions.createRoots();
             for (var entry : roots.entrySet()) {
@@ -42,9 +38,7 @@ public class Extract {
             }
             List<Object> result = new ArrayList<>();
             for (var entry : models.entrySet()) {
-                String id = entry.getKey();
-                result.add(object("kind", blockEntities.contains(id) ? "block_entity" : "entity",
-                    "model", object("id", id, "layers", entry.getValue())));
+                result.add(object("id", entry.getKey(), "layers", entry.getValue()));
             }
             String json = new GsonBuilder().disableHtmlEscaping().create().toJson(result);
             Files.writeString(Path.of(args[0]), json + "\n", StandardCharsets.UTF_8);
@@ -55,21 +49,6 @@ public class Extract {
             System.err.println("Extraction failed: " + error.getClass().getSimpleName() + ": " + error.getMessage());
             System.exit(1);
         }
-    }
-
-    private static Set<String> blockEntities() throws ReflectiveOperationException {
-        Class<?> registries;
-        try {
-            registries = Class.forName("net.minecraft.core.registries.BuiltInRegistries");
-        } catch (ClassNotFoundException error) {
-            registries = Registry.class;
-        }
-        Registry<?> registry = (Registry<?>) registries.getField("BLOCK_ENTITY_TYPE").get(null);
-        Set<String> result = new HashSet<>();
-        for (Object id : registry.keySet()) {
-            result.add(id.toString());
-        }
-        return result;
     }
 
     private static Map<String, Object> layer(LayerDefinition definition) throws ReflectiveOperationException {

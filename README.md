@@ -2,7 +2,7 @@
 
 Minecraft entity and block-entity geometry, with one branch per version (for example, `1.21.11`). `main` contains tooling, tests, and this README. The branch layout follows [minecraft-assets](https://github.com/InventivetalentDev/minecraft-assets).
 
-Files use `https://assets.mcasset.cloud/<version>/entity-models/<path>`, where `<path>` is `minecraft/entity/cow.json` or `minecraft/block_entity/chest.json`. Each directory has `_list.json` with sorted `directories` and `files` arrays. `version.json` contains the Mojang manifest entry, including `id`.
+Files use `https://assets.mcasset.cloud/<version>/entity-models/<path>`, for example `https://assets.mcasset.cloud/1.21.11/entity-models/minecraft/cow.json`. Every model uses `minecraft/<id>.json`; slashes in IDs become subdirectories, such as `minecraft/boat/oak.json`. Each directory has `_list.json` with sorted `directories` and `files` arrays. `version.json` contains the Mojang manifest entry, including `id`.
 
 Each model file groups every registered layer for one model ID:
 
@@ -28,7 +28,7 @@ Each model file groups every registered layer for one model ID:
 
 Children repeat the root part shape. Rotations are radians; coordinates and UVs use Minecraft's model units. Cubes optionally include `grow: [x, y, z]` and `mirror: true`; zero growth and false mirroring are omitted. Object keys are sorted in generated files.
 
-Part `texture` is optional, differs from the layer size, and applies to that part and its descendants until overridden. Only the legacy converter emits it. `pose.scale` is optional and omitted for `[1, 1, 1]`. Zero texture dimensions identify untextured geometry. Texture paths, cube UV scaling, and face masks are outside this schema.
+Part `texture` is optional, differs from the inherited size (the nearest ancestor override or the layer size), and applies to that part and its descendants until overridden. A child may restore the layer size. Only the legacy converter emits it. `pose.scale` is optional and omitted for `[1, 1, 1]`. Zero texture dimensions identify untextured geometry. Texture paths, cube UV scaling, and face masks are outside this schema.
 
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
 
@@ -47,10 +47,7 @@ Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Se
 
 Extraction and conversion require a new output directory. Run tests with `node --test`.
 
-| Version | Entity files | Block-entity files |
-| --- | ---: | ---: |
-| 1.17.1 | 122 | 4 |
-| 1.20.1 | 157 | 4 |
-| 1.21.11 | 285 | 4 |
-
-Counts follow model IDs: an exact block-entity registry match determines `block_entity`; all other IDs use `entity`.
+- 1.16.5: 86 model files.
+- 1.17.1: 126 model files.
+- 1.20.1: 161 model files.
+- 1.21.11: 289 model files.

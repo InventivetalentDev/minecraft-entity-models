@@ -144,8 +144,8 @@ async function main() {
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Extract.java', import.meta.url)), extracted], { cwd: directory });
     const records = JSON.parse(await readFile(extracted, 'utf8'));
-    const counts = await writeDataset(output, entry, records);
-    console.log(`${entry.id}: ${counts.entity} entities, ${counts.block_entity} block entities → ${output}`);
+    const count = await writeDataset(output, entry, records);
+    console.log(`${entry.id}: ${count} models → ${output}`);
   } finally {
     await rm(extracted, { force: true });
   }
