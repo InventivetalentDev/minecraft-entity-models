@@ -1,0 +1,1 @@
+{"id":"minecraft:squid","layers":{"main":{"root":{"children":{"head":{"children":{},"cubes":[{"origin":[-6,-8,-6],"size":[12,16,12],"uv":[0,0]}],"pose":{"offset":[0,8,0],"rotation":[0,0,0]}}},"cubes":[],"pose":{"offset":[0,0,0],"rotation":[0,0,0]}},"texture":[64,32]}}}
