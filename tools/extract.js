@@ -4,7 +4,8 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { writeDataset } from './lib.js';
+import { stableStringify, writeDataset } from './lib.js';
+import { addTextures } from './textures.js';
 
 const MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const ART_VERSION = '2.0.18';
@@ -143,9 +144,13 @@ async function main() {
   try {
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Extract.java', import.meta.url)), extracted], { cwd: directory });
-    const records = JSON.parse(await readFile(extracted, 'utf8'));
+    const { models: records, modelLayers } = JSON.parse(await readFile(extracted, 'utf8'));
+    console.log(`Resolving Minecraft ${entry.id} textures...`);
+    const textures = await addTextures(records, { jar: remapped, modelLayers, version: entry.id, cache, offline: values.offline });
     const count = await writeDataset(output, entry, records);
+    await writeFile(path.join(output, '_textures.report.json'), stableStringify(textures.report));
     console.log(`${entry.id}: ${count} models → ${output}`);
+    console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
   } finally {
     await rm(extracted, { force: true });
   }

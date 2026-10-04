@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateModel, writeDataset } from './lib.js';
+import { addTextures } from './textures.js';
 
 const VERSION = {
   id: '1.16.5',
@@ -127,10 +128,18 @@ async function main(args) {
   if (inputs.length !== 2 || !output) {
     throw new Error('Usage: node tools/convert-legacy.js <entityModels.json> <blockEntityModels.json> --output DIR');
   }
+  try {
+    await access(output);
+    throw new Error(`Output directory already exists: ${output}`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   const dumps = await Promise.all(inputs.map(async input => JSON.parse(await readFile(input, 'utf8'))));
   const { records, skipped, mixedTextureSizes } = convertLegacy(...dumps);
+  const textures = await addTextures(records, { version: VERSION.id });
   await writeDataset(output, VERSION, records);
   console.log(`Wrote ${records.length} models to ${output}; skipped ${skipped} empty models; preserved part texture sizes for ${mixedTextureSizes} models with mixed sizes.`);
+  console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

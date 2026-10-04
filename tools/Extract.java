@@ -12,6 +12,7 @@ import java.util.TreeMap;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.model.geom.LayerDefinitions;
 import net.minecraft.client.model.geom.ModelLayerLocation;
+import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
@@ -40,7 +41,16 @@ public class Extract {
             for (var entry : models.entrySet()) {
                 result.add(object("id", entry.getKey(), "layers", entry.getValue()));
             }
-            String json = new GsonBuilder().disableHtmlEscaping().create().toJson(result);
+            Map<String, Object> modelLayers = new TreeMap<>();
+            for (Field field : ModelLayers.class.getFields()) {
+                if (field.getType() != ModelLayerLocation.class) continue;
+                Object location = field.get(null);
+                modelLayers.put(field.getName(), object(
+                    "id", accessor(location, "getModel", "model").toString(),
+                    "layer", accessor(location, "getLayer", "layer").toString()));
+            }
+            String json = new GsonBuilder().disableHtmlEscaping().create().toJson(
+                object("models", result, "modelLayers", modelLayers));
             Files.writeString(Path.of(args[0]), json + "\n", StandardCharsets.UTF_8);
         } catch (Throwable error) {
             while (error.getCause() != null) {

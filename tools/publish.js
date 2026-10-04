@@ -30,6 +30,10 @@ async function validateInput(input, version) {
     for (const entry of entries) {
       const name = relative ? `${relative}/${entry.name}` : entry.name;
       const filename = path.join(directory, entry.name);
+      if (name === '_textures.report.json') {
+        if (!entry.isFile()) throw new Error('Texture report must be a regular file.');
+        continue;
+      }
       if (entry.isDirectory()) {
         if (!/^[a-z0-9_.-]+$/.test(entry.name) || entry.name === '.git') {
           throw new Error(`Unexpected directory: ${name}`);
@@ -100,7 +104,10 @@ async function main() {
     for (const entry of await readdir(worktree)) {
       if (entry !== '.git') await rm(path.join(worktree, entry), { recursive: true, force: true });
     }
-    await cp(input, worktree, { recursive: true });
+    await cp(input, worktree, {
+      recursive: true,
+      filter: source => source !== path.join(input, '_textures.report.json'),
+    });
     git(worktree, ['add', '--all', '--force']);
     const changed = !git(worktree, ['diff', '--cached', '--quiet'], { allowFailure: true }).ok;
     if (changed || !existing) git(worktree, ['commit', '-m', version]);

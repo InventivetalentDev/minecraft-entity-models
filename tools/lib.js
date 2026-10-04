@@ -73,7 +73,11 @@ export function validateModel(model) {
     throw new Error('Expected at least one model layer');
   }
   for (const layer of Object.values(model.layers)) {
-    object(layer, ['texture', 'root']);
+    object(layer, ['texture', 'root'], ['textureLocation']);
+    if (Object.hasOwn(layer, 'textureLocation')) {
+      const { name } = modelPath(layer.textureLocation);
+      if (!name.startsWith('textures/') || !name.endsWith('.png')) throw new Error(`Invalid texture location: ${layer.textureLocation}`);
+    }
     vector(layer.texture, 2);
     if (layer.texture.some(number => number < 0)) throw new Error('Texture dimensions must be nonnegative');
     part(layer.root, layer.texture);
@@ -81,11 +85,12 @@ export function validateModel(model) {
   return model;
 }
 
-export async function writeLists(directory) {
+export async function writeLists(directory, root = true) {
   const entries = await readdir(directory, { withFileTypes: true });
   const directories = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
-  const files = entries.filter(entry => entry.isFile() && entry.name !== '_list.json').map(entry => entry.name).sort();
-  for (const name of directories) await writeLists(path.join(directory, name));
+  const files = entries.filter(entry => entry.isFile() && entry.name !== '_list.json' &&
+    !(root && entry.name === '_textures.report.json')).map(entry => entry.name).sort();
+  for (const name of directories) await writeLists(path.join(directory, name), false);
   await writeFile(path.join(directory, '_list.json'), stableStringify({ directories, files }));
 }
 

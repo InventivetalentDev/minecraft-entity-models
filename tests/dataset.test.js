@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { stableStringify, validateModel, writeDataset } from '../tools/lib.js';
+import { stableStringify, validateModel, writeDataset, writeLists } from '../tools/lib.js';
 
 function model(id = 'minecraft:cow') {
   return {
@@ -11,6 +11,7 @@ function model(id = 'minecraft:cow') {
     layers: {
       main: {
         texture: [64, 32],
+        textureLocation: 'minecraft:textures/entity/cow/cow.png',
         root: {
           pose: { offset: [0, 0, 0], rotation: [0, 0, 0] },
           cubes: [],
@@ -54,6 +55,9 @@ test('schema rejects malformed geometry and redundant optional fields', () => {
     value => { value.layers.main.root.children.head.cubes[0].grow = [0, 0, 0]; },
     value => { value.layers.main.root.children.head.cubes[0].size[0] = NaN; },
     value => { value.id = 'minecraft:../cow'; },
+    value => { value.layers.main.textureLocation = 'textures/entity/cow/cow.png'; },
+    value => { value.layers.main.textureLocation = 'minecraft:textures/../cow.png'; },
+    value => { value.layers.main.textureLocation = 'minecraft:entity/cow/cow'; },
   ]) {
     const invalid = model();
     mutate(invalid);
@@ -68,6 +72,8 @@ test('directory listings include sorted files and nested directories without the
     model('minecraft:cow'),
     model('minecraft:boat/oak'),
   ]);
+  await writeFile(path.join(output, '_textures.report.json'), '{}\n');
+  await writeLists(output);
   const listing = async relative => JSON.parse(await readFile(path.join(output, relative, '_list.json'), 'utf8'));
   assert.deepEqual(await listing(''), { directories: ['minecraft'], files: ['version.json'] });
   assert.deepEqual(await listing('minecraft'), { directories: ['boat'], files: ['cow.json', 'zombie.json'] });

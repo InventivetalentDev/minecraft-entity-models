@@ -1,0 +1,27 @@
+Compiled from "CowRenderer.java"
+public class net.minecraft.client.renderer.entity.CowRenderer {
+  public net.minecraft.client.renderer.entity.CowRenderer();
+    Code:
+       0: getstatic     #12                 // Field net/minecraft/client/model/geom/ModelLayers.COW:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       3: getstatic     #13                 // Field net/minecraft/client/model/geom/ModelLayers.COW_ALIAS:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       6: ldc           #20                 // String textures/entity/cow/cow.png
+       8: return
+}
+Compiled from "PigRenderer.java"
+public class net.minecraft.client.renderer.entity.PigRenderer {
+  public net.minecraft.client.renderer.entity.PigRenderer();
+    Code:
+       0: getstatic     #12                 // Field net/minecraft/client/model/geom/ModelLayers.PIG:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       3: getstatic     #13                 // Field net/minecraft/client/model/geom/ModelLayers.PIG_BABY:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       6: ldc_w         #200                // String textures/entity/pig/pig.png
+       9: return
+}
+Compiled from "EmptyRenderer.java"
+public class net.minecraft.client.renderer.entity.EmptyRenderer {
+  public net.minecraft.client.renderer.entity.EmptyRenderer();
+    Code:
+       0: return
+}
+Compiled from "package-info.java"
+interface net.minecraft.client.renderer.entity.package-info {
+}
