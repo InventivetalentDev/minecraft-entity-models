@@ -1,46 +1,16 @@
-import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { stableStringify, writeDataset } from './lib.js';
 import { addTextures } from './textures.js';
+import { DEFAULT_CACHE, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 
-const MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const ART_VERSION = '2.0.18';
 const ART_SHA1 = '59bd788e0a1bd339256711dee40015a62cdf3cd2';
 const ART_URL = `https://maven.neoforged.net/releases/net/neoforged/AutoRenamingTool/${ART_VERSION}/AutoRenamingTool-${ART_VERSION}-all.jar`;
 const JAVA = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'java') : 'java';
-
-function sha1(bytes) {
-  return createHash('sha1').update(bytes).digest('hex');
-}
-
-async function exists(file) {
-  try { await access(file); return true; } catch (error) {
-    if (error.code === 'ENOENT') return false;
-    throw error;
-  }
-}
-
-async function download(url, file, expectedHash, offline, refresh = false) {
-  if (!refresh && await exists(file)) {
-    const bytes = await readFile(file);
-    if (expectedHash && sha1(bytes) !== expectedHash) throw new Error(`SHA-1 mismatch: ${file}`);
-    return bytes;
-  }
-  if (offline) throw new Error(`Offline cache miss: ${file}`);
-  const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
-  if (!response.ok) throw new Error(`Download failed (${response.status}): ${url}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (expectedHash && sha1(bytes) !== expectedHash) throw new Error(`SHA-1 mismatch: ${url}`);
-  await mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  await writeFile(temporary, bytes);
-  await rename(temporary, file);
-  return bytes;
-}
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -84,13 +54,8 @@ async function main() {
   if (!values.version || !values.output) throw new Error('Usage: node tools/extract.js --version VERSION --output DIR [--cache DIR] [--offline]');
   const output = path.resolve(values.output);
   if (await exists(output)) throw new Error(`Output directory already exists: ${output}`);
-  const cache = path.resolve(values.cache || '.cache/minecraft-entity-models');
-  const manifest = JSON.parse(await download(MANIFEST, path.join(cache, 'manifest.json'), null, values.offline, !values.offline));
-  const entry = manifest.versions.find(version => version.id === values.version);
-  if (!entry) throw new Error(`Version not found in cached Mojang manifest: ${values.version}`);
-  if (!/^[a-zA-Z0-9._-]+$/.test(entry.id)) throw new Error(`Invalid version id: ${entry.id}`);
-  const directory = path.join(cache, entry.id);
-  const metadata = JSON.parse(await download(entry.url, path.join(directory, `${entry.sha1}.json`), entry.sha1, values.offline));
+  const cache = path.resolve(values.cache || DEFAULT_CACHE);
+  const { entry, metadata, directory } = await loadVersion(values.version, cache, values.offline);
   if ((/^1\.(\d+)/.test(entry.id) && Number(entry.id.match(/^1\.(\d+)/)[1]) < 17) || !metadata.downloads.client_mappings) {
     throw new Error('Use the legacy converter for Minecraft versions before 1.17');
   }
@@ -101,10 +66,9 @@ async function main() {
   console.log(`Downloading Minecraft ${entry.id} and its libraries...`);
   const client = metadata.downloads.client;
   const mappings = metadata.downloads.client_mappings;
-  const clientJar = path.join(directory, `client-${client.sha1}.jar`);
+  const clientJar = await downloadClient(metadata, directory, values.offline);
   const mappingFile = path.join(directory, `mappings-${mappings.sha1}.txt`);
   const remapper = path.join(cache, `AutoRenamingTool-${ART_VERSION}-all.jar`);
-  await download(client.url, clientJar, client.sha1, values.offline);
   await download(`https://assets.mcasset.cloud/${encodeURIComponent(entry.id)}/mappings/client.txt`, mappingFile, mappings.sha1, values.offline);
   await download(ART_URL, remapper, ART_SHA1, values.offline);
   const libraries = [];

@@ -3,32 +3,55 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyOverrides, pairTextures, validateTextures } from '../tools/textures.js';
+import { applyOverrides, applyStemTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
 
 const model = id => ({ id: `minecraft:${id}`, layers: { main: {} } });
 
-test('javap pairing resolves aliases and leaves ambiguous renderer layers unpaired', async () => {
+test('javap pairing ignores armor sets, resolves aliases, and shares one texture across layers', async () => {
   const fixture = await readFile(new URL('./fixtures/renderers.javap.txt', import.meta.url), 'utf8');
   const records = [model('cow'), model('pig'), model('pig_baby')];
+  records.push({ id: 'minecraft:creeper', layers: { main: {}, armor: {} } });
   const fields = {
     COW: { id: 'minecraft:cow', layer: 'main' },
     COW_ALIAS: { id: 'minecraft:cow', layer: 'main' },
     PIG: { id: 'minecraft:pig', layer: 'main' },
     PIG_BABY: { id: 'minecraft:pig_baby', layer: 'main' },
+    CREEPER: { id: 'minecraft:creeper', layer: 'main' },
+    CREEPER_ARMOR: { id: 'minecraft:creeper', layer: 'armor' },
   };
   const { report, sources } = pairTextures(fixture, records, fields);
   assert.equal(records[0].layers.main.textureLocation, 'minecraft:textures/entity/cow/cow.png');
-  assert.equal(records[1].layers.main.textureLocation, undefined);
-  assert.equal(report.pairings.length, 1);
+  assert.equal(records[1].layers.main.textureLocation, 'minecraft:textures/entity/pig/pig.png');
+  assert.equal(records[2].layers.main.textureLocation, 'minecraft:textures/entity/pig/pig.png');
+  assert.equal(records[3].layers.main.textureLocation, undefined);
+  assert.equal(report.pairings.length, 3);
   assert.deepEqual(report.unpaired.map(entry => entry.className), [
+    'net.minecraft.client.renderer.entity.CreeperRenderer',
     'net.minecraft.client.renderer.entity.EmptyRenderer', 'net.minecraft.client.renderer.entity.package-info',
-    'net.minecraft.client.renderer.entity.PigRenderer',
   ]);
   assert.equal(sources.get('minecraft:cow#main'), 'pass 1');
   const conflict = fixture.replaceAll('CowRenderer', 'OtherCowRenderer').replaceAll('cow/cow.png', 'cow/warm_cow.png');
   const fresh = [model('cow')];
   assert.equal(pairTextures(fixture + conflict, fresh, fields).report.pairings.length, 0);
   assert.equal(fresh[0].layers.main.textureLocation, undefined);
+});
+
+test('stem matches distinguish layer names and leave duplicate basenames unresolved', () => {
+  const records = [model('creeper'), model('creeper_baby'), model('unknown'), model('pig')];
+  records[0].layers.armor = {};
+  records[1].layers.armor = {};
+  const sources = new Map();
+  const missing = applyStemTextures([
+    'textures/entity/creeper/creeper.png', 'textures/entity/creeper/creeper_armor.png',
+    'textures/entity/pig/pig.png', 'textures/entity/other/pig.png',
+  ], records, sources);
+  assert.equal(records[0].layers.armor.textureLocation, 'minecraft:textures/entity/creeper/creeper_armor.png');
+  assert.equal(records[1].layers.main.textureLocation, records[0].layers.main.textureLocation);
+  assert.equal(records[1].layers.armor.textureLocation, records[0].layers.armor.textureLocation);
+  assert.match(missing.get('minecraft:unknown#main').reason, /No exact texture stem/);
+  assert.equal(missing.get('minecraft:pig#main').candidates.length, 2);
+  assert.equal(records[3].layers.main.textureLocation, undefined);
+  assert.equal(sources.get('minecraft:creeper#armor'), 'stem');
 });
 
 test('texture override patterns expand captures before exact overrides and suppression', async () => {
@@ -44,6 +67,25 @@ test('texture override patterns expand captures before exact overrides and suppr
   assert.equal(records[2].layers.main.textureLocation, undefined);
   assert.equal(records[3].layers.main.textureLocation, undefined);
   assert.equal(sources.get('minecraft:sign/wall/oak#main'), 'override');
+});
+
+test('baby textures follow final parent overrides while preserving explicit exclusions', async () => {
+  const records = ['cow', 'cow_baby', 'pig', 'pig_baby', 'cat', 'cat_baby', 'zombie', 'zombie_baby', 'orphan_baby'].map(model);
+  for (const entry of records) entry.layers.main.textureLocation = 'minecraft:textures/entity/initial.png';
+  const sources = await applyOverrides(records, { overrides: {
+    cow: 'minecraft:textures/entity/cow/temperate_cow.png',
+    pig: 'minecraft:textures/entity/pig/temperate_pig.png',
+    pig_baby: null,
+    cat: 'minecraft:textures/entity/cat/black.png',
+    cat_baby: 'minecraft:textures/entity/cat/tabby.png',
+    zombie: null,
+  } });
+  inheritBabyTextures(records, sources);
+  assert.equal(records[1].layers.main.textureLocation, records[0].layers.main.textureLocation);
+  assert.equal(records[3].layers.main.textureLocation, undefined);
+  assert.equal(records[5].layers.main.textureLocation, 'minecraft:textures/entity/cat/tabby.png');
+  assert.equal(records[7].layers.main.textureLocation, undefined);
+  assert.equal(records[8].layers.main.textureLocation, 'minecraft:textures/entity/initial.png');
 });
 
 test('texture validation rejects missing assets and requires prior HEAD success offline', async t => {

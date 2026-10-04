@@ -1,18 +1,9 @@
-import { access, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateModel, writeDataset } from './lib.js';
+import { stableStringify, validateModel, writeDataset } from './lib.js';
 import { addTextures } from './textures.js';
-
-const VERSION = {
-  id: '1.16.5',
-  type: 'release',
-  url: 'https://piston-meta.mojang.com/v1/packages/fba9f7833e858a1257d810d21a3a9e3c967f9077/1.16.5.json',
-  time: '2023-06-07T11:09:02+00:00',
-  releaseTime: '2021-01-14T16:05:32+00:00',
-  sha1: 'fba9f7833e858a1257d810d21a3a9e3c967f9077',
-  complianceLevel: 1,
-};
+import { DEFAULT_CACHE, downloadClient, exists, loadVersion } from './download.js';
 
 function childrenOf(part, id) {
   if (!part || !Array.isArray(part.cubes) || !Array.isArray(part.children)) {
@@ -128,16 +119,15 @@ async function main(args) {
   if (inputs.length !== 2 || !output) {
     throw new Error('Usage: node tools/convert-legacy.js <entityModels.json> <blockEntityModels.json> --output DIR');
   }
-  try {
-    await access(output);
-    throw new Error(`Output directory already exists: ${output}`);
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
+  if (await exists(output)) throw new Error(`Output directory already exists: ${output}`);
   const dumps = await Promise.all(inputs.map(async input => JSON.parse(await readFile(input, 'utf8'))));
   const { records, skipped, mixedTextureSizes } = convertLegacy(...dumps);
-  const textures = await addTextures(records, { version: VERSION.id });
-  await writeDataset(output, VERSION, records);
+  const cache = resolve(DEFAULT_CACHE);
+  const { entry, metadata, directory } = await loadVersion('1.16.5', cache);
+  const clientJar = await downloadClient(metadata, directory);
+  const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache });
+  await writeDataset(output, entry, records);
+  await writeFile(join(output, '_textures.report.json'), stableStringify(textures.report));
   console.log(`Wrote ${records.length} models to ${output}; skipped ${skipped} empty models; preserved part texture sizes for ${mixedTextureSizes} models with mixed sizes.`);
   console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
 }

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stableStringify } from './lib.js';
 
 const key = (id, layer) => `${id}#${layer}`;
@@ -28,25 +29,27 @@ export function pairTextures(dump, records, modelLayers) {
   for (let index = 0; index < classes.length; index++) {
     const text = dump.slice(classes[index].index, classes[index + 1]?.index ?? dump.length);
     const textures = [...new Set([...text.matchAll(/\bldc(?:_w)?\s+#\d+\s+\/\/ String (textures\/entity\/[^\s]+\.png)\s*$/gm)].map(match => `minecraft:${match[1]}`))].sort();
-    const fields = [...new Set([...text.matchAll(/\bgetstatic\s+#\d+\s+\/\/ Field net\/minecraft\/client\/model\/geom\/ModelLayers\.([\w$]+):/g)].map(match => match[1]))].sort();
+    const fields = [...new Set([...text.matchAll(/\bgetstatic\s+#\d+\s+\/\/ Field net\/minecraft\/client\/model\/geom\/ModelLayers\.([\w$]+):Lnet\/minecraft\/client\/model\/geom\/ModelLayerLocation;/g)].map(match => match[1]))].sort();
     const locations = [...new Set(fields.filter(field => modelLayers[field]).map(field => key(modelLayers[field].id, modelLayers[field].layer)))].sort();
     const unresolved = fields.filter(field => !modelLayers[field]);
     const entry = { className: classes[index][1], modelLayers: locations, textures };
     let reason;
     if (unresolved.length) reason = `Unresolved ModelLayers fields: ${unresolved.join(', ')}`;
-    else if (locations.length !== 1 || textures.length !== 1) reason = 'Requires exactly one model layer and one texture';
-    else if (!targets.has(locations[0])) reason = 'Model layer is absent from the dataset';
+    else if (!locations.length || textures.length !== 1) reason = 'Requires model layers and exactly one texture';
+    else if (!locations.some(location => targets.has(location))) reason = 'Model layers are absent from the dataset';
     if (reason) {
       report.unpaired.push({ ...entry, reason });
     } else {
-      const entries = candidates.get(locations[0]) || [];
-      entries.push(entry);
-      candidates.set(locations[0], entries);
+      for (const location of locations.filter(location => targets.has(location))) {
+        const entries = candidates.get(location) || [];
+        entries.push(entry);
+        candidates.set(location, entries);
+      }
     }
   }
   for (const [location, entries] of candidates) {
     if (new Set(entries.map(entry => entry.textures[0])).size !== 1) {
-      report.unpaired.push(...entries.map(entry => ({ ...entry, reason: 'Conflicting textures for the model layer' })));
+      report.unpaired.push(...entries.map(entry => ({ ...entry, modelLayers: [location], reason: 'Conflicting textures for the model layer' })));
       continue;
     }
     const textureLocation = entries[0].textures[0];
@@ -54,8 +57,40 @@ export function pairTextures(dump, records, modelLayers) {
     sources.set(location, 'pass 1');
     for (const entry of entries) report.pairings.push({ className: entry.className, modelLayer: location, textureLocation });
   }
-  for (const entries of Object.values(report)) entries.sort((a, b) => a.className.localeCompare(b.className, 'en'));
+  for (const entries of Object.values(report)) entries.sort((a, b) => a.className.localeCompare(b.className, 'en')
+    || (a.modelLayer || a.modelLayers.join(',')).localeCompare(b.modelLayer || b.modelLayers.join(','), 'en'));
   return { report, sources };
+}
+
+export function applyStemTextures(textures, records, sources = new Map()) {
+  const stems = new Map();
+  for (const texture of [...new Set(textures)].sort()) {
+    const location = texture.startsWith('textures/') ? `minecraft:${texture}` : texture;
+    const match = /^([a-z0-9_.-]+):textures\/entity\/[a-z0-9_./-]+\.png$/.exec(location);
+    if (!match || location.split(/[/:]/).some(part => part === '.' || part === '..')) continue;
+    const stem = path.posix.basename(location, '.png');
+    const candidates = stems.get(stem) || [];
+    if (!candidates.includes(location)) candidates.push(location);
+    stems.set(stem, candidates);
+  }
+  const missing = new Map();
+  for (const model of records) {
+    const name = model.id.split(':')[1].replace(/_baby$/, '');
+    for (const [layer, value] of Object.entries(model.layers)) {
+      if (value.textureLocation) continue;
+      const stem = layer === 'main' ? name : `${name}_${layer}`;
+      const candidates = stems.get(stem) || [];
+      const location = key(model.id, layer);
+      if (candidates.length === 1) {
+        value.textureLocation = candidates[0];
+        sources.set(location, 'stem');
+      } else {
+        missing.set(location, { reason: candidates.length ? `Ambiguous texture stem: ${stem}` : `No exact texture stem: ${stem}`,
+          ...(candidates.length ? { candidates } : {}) });
+      }
+    }
+  }
+  return missing;
 }
 
 async function variants(jar, entries, records, sources) {
@@ -94,15 +129,21 @@ async function variants(jar, entries, records, sources) {
 }
 
 export async function extractTextures({ jar, records, modelLayers }) {
-  const entries = (await run(javaTool('jar'), ['tf', jar])).trim().split(/\r?\n/);
-  const classes = entries.filter(entry => /^net\/minecraft\/client\/renderer\/(?:entity|blockentity)\/.*\.class$/.test(entry))
-    .map(entry => entry.slice(0, -6).replaceAll('/', '.')).sort();
-  const dumps = [];
-  for (let index = 0; index < classes.length; index += 40) {
-    dumps.push(await run(javaTool('javap'), ['-c', '-p', '-classpath', jar, ...classes.slice(index, index + 40)]));
+  let result = { report: { pairings: [], unpaired: [] }, sources: new Map() };
+  let entries = [];
+  if (modelLayers) {
+    entries = (await run(javaTool('jar'), ['tf', jar])).trim().split(/\r?\n/);
+    const classes = entries.filter(entry => /^net\/minecraft\/client\/renderer\/(?:entity|blockentity)\/.*\.class$/.test(entry))
+      .map(entry => entry.slice(0, -6).replaceAll('/', '.')).sort();
+    const dumps = [];
+    for (let index = 0; index < classes.length; index += 40) {
+      dumps.push(await run(javaTool('javap'), ['-c', '-p', '-classpath', jar, ...classes.slice(index, index + 40)]));
+    }
+    result = pairTextures(dumps.join('\n'), records, modelLayers);
   }
-  const result = pairTextures(dumps.join('\n'), records, modelLayers);
-  await variants(jar, entries, records, result.sources);
+  const strings = (await run(javaTool('java'), [fileURLToPath(new URL('./TextureStrings.java', import.meta.url)), jar])).trim().split(/\r?\n/);
+  result.missing = applyStemTextures(strings, records, result.sources);
+  if (modelLayers) await variants(jar, entries, records, result.sources);
   return result;
 }
 
@@ -134,7 +175,7 @@ export async function applyOverrides(records, { sources = new Map(), overrides }
       if (texture !== null && typeof texture !== 'string') throw new Error(`Invalid texture override for ${location}`);
       if (texture === null) {
         delete model.layers[name].textureLocation;
-        sources.delete(location);
+        sources.set(location, 'null override');
       } else {
         model.layers[name].textureLocation = texture.replace(/\{([A-Za-z]\w*)\}/g, (_, name) => {
           if (!(name in captures)) throw new Error(`Unknown texture pattern variable: ${name}`);
@@ -166,6 +207,28 @@ export async function applyOverrides(records, { sources = new Map(), overrides }
     if (model) apply(model, value);
   }
   return sources;
+}
+
+export function inheritBabyTextures(records, sources) {
+  const byId = new Map(records.map(model => [model.id, model]));
+  for (const model of [...records].sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id, 'en'))) {
+    for (const [layer, value] of Object.entries(model.layers)) {
+      const location = key(model.id, layer);
+      if (['override', 'null override'].includes(sources.get(location))) continue;
+      const parent = model.id.endsWith('_baby') ? byId.get(model.id.slice(0, -5)) : layer === 'baby' ? model : null;
+      const parentLayer = parent === model ? 'main' : layer;
+      const parentValue = parent?.layers[parentLayer];
+      if (!parentValue) continue;
+      const parentKey = key(parent.id, parentLayer);
+      if (['null override', 'inherited null override'].includes(sources.get(parentKey))) {
+        delete value.textureLocation;
+        sources.set(location, 'inherited null override');
+      } else if (parentValue.textureLocation) {
+        value.textureLocation = parentValue.textureLocation;
+        sources.set(location, `inherited ${parentKey} (${sources.get(parentKey)})`);
+      }
+    }
+  }
 }
 
 export async function validateTextures(records, version, sources, { cache = '.cache/minecraft-entity-models', offline = false, fetch = globalThis.fetch } = {}) {
@@ -216,9 +279,23 @@ export async function validateTextures(records, version, sources, { cache = '.ca
 }
 
 export async function addTextures(records, { jar, modelLayers, version, cache, offline } = {}) {
-  const { report, sources } = jar ? await extractTextures({ jar, records, modelLayers })
-    : { report: { pairings: [], unpaired: [] }, sources: new Map() };
+  for (const model of records) for (const value of Object.values(model.layers)) delete value.textureLocation;
+  const { report, sources, missing } = jar ? await extractTextures({ jar, records, modelLayers })
+    : { report: { pairings: [], unpaired: [] }, sources: new Map(), missing: applyStemTextures([], records) };
   await applyOverrides(records, { sources });
+  inheritBabyTextures(records, sources);
+  report.missing = [];
+  for (const model of [...records].sort((a, b) => a.id.localeCompare(b.id, 'en'))) {
+    for (const [layer, value] of Object.entries(model.layers).sort(([a], [b]) => a.localeCompare(b, 'en'))) {
+      if (value.textureLocation) continue;
+      const location = key(model.id, layer);
+      const source = sources.get(location);
+      const reason = source === 'null override' ? { reason: 'Explicit null override' }
+        : source === 'inherited null override' ? { reason: 'Parent layer excluded by null override' }
+          : missing.get(location) || { reason: 'No texture assigned by renderer, stem, variant, or override' };
+      report.missing.push({ id: model.id, layer, ...reason });
+    }
+  }
   await validateTextures(records, version, sources, { cache, offline });
   const withTexture = records.filter(model => Object.values(model.layers).some(layer => layer.textureLocation)).length;
   return { report, withTexture, withoutTexture: records.length - withTexture };

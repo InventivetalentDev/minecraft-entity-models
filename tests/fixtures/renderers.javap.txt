@@ -4,6 +4,7 @@ public class net.minecraft.client.renderer.entity.CowRenderer {
     Code:
        0: getstatic     #12                 // Field net/minecraft/client/model/geom/ModelLayers.COW:Lnet/minecraft/client/model/geom/ModelLayerLocation;
        3: getstatic     #13                 // Field net/minecraft/client/model/geom/ModelLayers.COW_ALIAS:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       4: getstatic     #14                 // Field net/minecraft/client/model/geom/ModelLayers.COW_ARMOR:Lnet/minecraft/client/model/geom/builders/ArmorModelSet;
        6: ldc           #20                 // String textures/entity/cow/cow.png
        8: return
 }
@@ -24,4 +25,14 @@ public class net.minecraft.client.renderer.entity.EmptyRenderer {
 }
 Compiled from "package-info.java"
 interface net.minecraft.client.renderer.entity.package-info {
+}
+Compiled from "CreeperRenderer.java"
+public class net.minecraft.client.renderer.entity.CreeperRenderer {
+  public net.minecraft.client.renderer.entity.CreeperRenderer();
+    Code:
+       0: getstatic     #12                 // Field net/minecraft/client/model/geom/ModelLayers.CREEPER:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       3: getstatic     #13                 // Field net/minecraft/client/model/geom/ModelLayers.CREEPER_ARMOR:Lnet/minecraft/client/model/geom/ModelLayerLocation;
+       6: ldc           #20                 // String textures/entity/creeper/creeper.png
+       8: ldc           #21                 // String textures/entity/creeper/creeper_armor.png
+      10: return
 }
