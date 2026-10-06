@@ -1,6 +1,7 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { validateTransform } from './transform.js';
+import { validatePasses } from './passes.js';
 
 export function stableStringify(value) {
   function encode(item) {
@@ -68,14 +69,14 @@ function part(value, inheritedTexture) {
 }
 
 export function validateModel(model) {
-  object(model, ['id', 'layers', 'transform']);
+  object(model, ['id', 'layers', 'transform'], ['passes']);
   validateTransform(model.transform);
   modelPath(model.id);
   if (!model.layers || typeof model.layers !== 'object' || Array.isArray(model.layers) || Object.keys(model.layers).length === 0) {
     throw new Error('Expected at least one model layer');
   }
   for (const layer of Object.values(model.layers)) {
-    object(layer, ['texture', 'root'], ['textureLocation']);
+    object(layer, ['texture', 'root'], ['textureLocation', 'render']);
     if (Object.hasOwn(layer, 'textureLocation')) {
       const { name } = modelPath(layer.textureLocation);
       if (!name.startsWith('textures/') || !name.endsWith('.png')) throw new Error(`Invalid texture location: ${layer.textureLocation}`);
@@ -84,6 +85,7 @@ export function validateModel(model) {
     if (layer.texture.some(number => number < 0)) throw new Error('Texture dimensions must be nonnegative');
     part(layer.root, layer.texture);
   }
+  validatePasses(model);
   return model;
 }
 
