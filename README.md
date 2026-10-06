@@ -52,6 +52,38 @@ A layer's optional `render` names the vanilla render type that draws its geometr
 
 Optional `textureLocation` values identify default textures using heuristics plus overrides and are omitted when unknown.
 
+## Block index
+
+`blocks.json` at the root of a version maps block IDs to the models their block-entity renderer draws. Vanilla block models have no geometry for these blocks.
+
+```json
+{
+  "minecraft:trapped_chest": {
+    "parts": [
+      {"model": "minecraft:chest", "textureLocation": "minecraft:textures/entity/chest/trapped.png", "when": {"type": "single"}},
+      {"model": "minecraft:double_chest_left", "textureLocation": "minecraft:textures/entity/chest/trapped_left.png", "when": {"type": "left"}},
+      {"model": "minecraft:double_chest_right", "textureLocation": "minecraft:textures/entity/chest/trapped_right.png", "when": {"type": "right"}}
+    ],
+    "rotation": {"property": "facing", "degrees": {"east": 90, "north": 180, "south": 0, "west": 270}}
+  },
+  "minecraft:skeleton_wall_skull": {
+    "parts": [{"model": "minecraft:skeleton_skull"}],
+    "rotation": {"property": "facing", "degrees": {"east": 270, "north": 0, "south": 180, "west": 90}},
+    "translation": [0, 4, 4]
+  }
+}
+```
+
+- `parts`: draw every part whose `when` matches the block state. `when` uses the syntax of blockstate multipart conditions: all properties must match, and `a|b` matches either value. `layer` defaults to `main`. `textureLocation` is present only when it differs from the model layer's default.
+- `rotation`: a rotation about the block's vertical centre axis, selected by the block-state property `property`. It is either `degrees` (property value to angle) or `step` (angle = numeric property value × `step`, used for the 0–15 `rotation` property). Angles are degrees counter-clockwise seen from above (right-handed about +Y, like vanilla's `Axis.YP`); blockstate `y` rotations turn the other way.
+- `translation`: an offset in model units, applied before the rotation, so it turns with the model.
+
+The index holds only what depends on the block and its state. Apply it after the model's own constant placement, which is the renderer's pose with the facing angle (`toYRot()` or `rotation` × 22.5) at zero. At zero, chests, beds, decorated pots, signs, hanging signs and banners are in their `facing=south` (or `rotation=0`) pose and face south (+Z; a bed's head end points south); skulls and heads face north (−Z), the pose of `rotation=0` and of a wall skull with `facing=north`.
+
+Shulker boxes have no `rotation`: their `facing` is not a rotation about the vertical axis, and the entry describes `facing=up`. Banner entries carry no colour because the base colour is a tint. Lid angles, animation, player skins, banner patterns, pot sherds and sign text are not part of the index.
+
+Block families are described in `tools/block-families.json` and expanded per version by `tools/blocks.js`. Parts whose model is missing in a version and blocks without a blockstate file in that version are left out.
+
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
 
 1. Extract Minecraft 1.17+ (add `--cache DIR` to change the cache or `--offline` to use cached downloads):

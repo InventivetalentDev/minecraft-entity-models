@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { cp, lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { validateBlocks } from './blocks.js';
 import { validateModel } from './lib.js';
 
 function git(cwd, args, { allowFailure = false } = {}) {
@@ -46,6 +47,10 @@ async function validateInput(input, version) {
         const data = await json(filename);
         if (name === 'version.json') {
           if (data?.id !== version) throw new Error('version.json does not match --version.');
+          continue;
+        }
+        if (name === 'blocks.json') {
+          validateBlocks(data);
           continue;
         }
         const match = /^([a-z0-9_.-]+)\/([a-z0-9_./-]+)\.json$/.exec(name);
