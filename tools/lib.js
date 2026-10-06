@@ -2,6 +2,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { validateTransform } from './transform.js';
 import { validatePasses } from './passes.js';
+import { validateBlocks } from './blocks.js';
 
 export function stableStringify(value) {
   function encode(item) {
@@ -98,7 +99,7 @@ export async function writeLists(directory, root = true) {
   await writeFile(path.join(directory, '_list.json'), stableStringify({ directories, files }));
 }
 
-export async function writeDataset(output, versionMetadata, records) {
+export async function writeDataset(output, versionMetadata, records, { blocks } = {}) {
   if (!versionMetadata || typeof versionMetadata.id !== 'string') throw new Error('Missing version id');
   const files = new Map();
   for (const model of records) {
@@ -108,6 +109,7 @@ export async function writeDataset(output, versionMetadata, records) {
     if (files.has(file)) throw new Error(`Duplicate model: ${model.id}`);
     files.set(file, stableStringify(model));
   }
+  if (blocks) validateBlocks(blocks);
   await mkdir(path.dirname(path.resolve(output)), { recursive: true });
   try {
     await mkdir(output);
@@ -120,6 +122,7 @@ export async function writeDataset(output, versionMetadata, records) {
     await mkdir(path.dirname(path.join(output, file)), { recursive: true });
     await writeFile(path.join(output, file), contents);
   }
+  if (blocks) await writeFile(path.join(output, 'blocks.json'), stableStringify(blocks));
   await writeFile(path.join(output, 'version.json'), stableStringify(versionMetadata));
   await writeLists(output);
   return files.size;
