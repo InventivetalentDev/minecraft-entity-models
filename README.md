@@ -31,6 +31,10 @@ Children repeat the root part shape. Rotations are radians; coordinates and UVs 
 
 Part `texture` is optional, differs from the inherited size (the nearest ancestor override or the layer size), and applies to that part and its descendants until overridden. A child may restore the layer size. Only the legacy converter emits it. `pose.scale` is optional and omitted for `[1, 1, 1]`. Zero texture dimensions identify untextured geometry. Cube UV scaling and face masks are outside this schema.
 
+Models use vanilla model space. Top-level `transform` lists the operations the vanilla renderer applies to the pose stack before it draws the model, in call order, so the last operation is applied to the vertices first. It is always present and `[]` means identity. Each operation is `{"scale": [x, y, z]}`, `{"translate": [x, y, z]}` in model units, or `{"rotate": [x, y, z]}` in radians with the same convention as `pose.rotation`. Most models get the living-entity default `[{"rotate": [0, 3.1415927, 0]}, {"scale": [-1, -1, 1]}, {"translate": [0, -24.016, 0]}]`; `tools/transforms.json` lists the reviewed exceptions.
+
+`transform` describes the default state: an entity with yaw 0, default size and no animation, or a block entity with zero facing rotation and its animation at rest. State-dependent operations are evaluated there and dropped when they become identity; constant operations stay. Operations that a renderer applies to single parts are not included, such as the banner flag offset and the end crystal glass and cube before 1.21.2, and the conduit eye and cage. After `transform`, a block-entity model is in block space (0 to 16 on each axis), and a block state adds its Y rotation about the vertical axis through the block centre.
+
 Optional `textureLocation` values identify default textures using heuristics plus overrides and are omitted when unknown.
 
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
