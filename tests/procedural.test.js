@@ -3,6 +3,7 @@ import test from 'node:test';
 import { buildAnimations, validateAnimations } from '../tools/animations.js';
 import { blockAnimations } from '../tools/procedural-blocks.js';
 import { proceduralAnimations } from '../tools/procedural-animations.js';
+import { decimateChannel } from '../tools/procedural-decimation.js';
 
 function layer(...names) {
   return { root: { children: Object.fromEntries(names.map(name => [name, { children: {} }])) } };
@@ -19,6 +20,74 @@ function dump(id, name, bone, extra = {}) {
     ...extra,
   };
 }
+
+function sampleChannel(frames, time) {
+  const right = frames.findIndex(frame => frame.time > time);
+  if (right === -1) return frames.at(-1).value;
+  if (right === 0) return frames[0].value;
+  const a = frames[right - 1];
+  const b = frames[right];
+  const t = (time - a.time) / (b.time - a.time);
+  if (b.interpolation === 'linear') {
+    return a.value.map((value, axis) => value * (1 - t) + (b.pre ?? b.value)[axis] * t);
+  }
+  const previous = frames[Math.max(0, right - 2)].value;
+  const next = frames[Math.min(frames.length - 1, right + 1)].value;
+  return a.value.map((value, axis) => (2 * value + (b.value[axis] - previous[axis]) * t +
+    (2 * previous[axis] - 5 * value + 4 * b.value[axis] - next[axis]) * t * t +
+    (next[axis] - previous[axis] + 3 * value - 3 * b.value[axis]) * t * t * t) / 2);
+}
+
+test('decimation preserves a sine channel within tolerance and keeps its endpoints', () => {
+  const pose = time => [Math.sin(time * Math.PI), Math.cos(time * Math.PI) / 2, 0];
+  const source = Array.from({ length: 4001 }, (_, index) => ({
+    time: index / 1000, value: pose(index / 1000), interpolation: 'linear',
+  }));
+  const original = structuredClone(source);
+  for (const [tolerance, reduced] of [[0.01, decimateChannel(source)], [0.001, decimateChannel(source, 0.001)]]) {
+    assert.ok(reduced.length < source.length / 10);
+    assert.ok(reduced.some(frame => frame.interpolation === 'catmullrom'));
+    assert.deepEqual(source, original);
+    for (const index of [0, -1]) {
+      assert.equal(reduced.at(index).time, source.at(index).time);
+      assert.deepEqual(reduced.at(index).value, source.at(index).value);
+    }
+    for (let index = 0; index <= 16000; index++) {
+      const time = index / 4000;
+      const actual = sampleChannel(reduced, time);
+      assert.ok(actual.every((value, axis) => Math.abs(value - pose(time)[axis]) <= tolerance),
+        `Curve error exceeds ${tolerance} at ${time}`);
+    }
+  }
+});
+
+test('decimation retains pre frames and curve shapes around discontinuities', () => {
+  const jump = 0.713;
+  const pose = (time, offset = time >= jump ? 5 : 0) => [Math.sin(time * 3) + offset, Math.cos(time * 2), time];
+  const source = Array.from({ length: 2001 }, (_, index) => ({
+    time: index / 1000, value: pose(index / 1000), interpolation: 'linear',
+  }));
+  source[713].pre = pose(jump, 0);
+  source.at(-1).pre = source.at(-1).value;
+  source.at(-1).value = [0, 0, 0];
+  const times = [...Array.from({ length: 8000 }, (_, index) => index / 4000),
+    jump - 1e-8, jump, jump + 1e-8, 2 - 1e-8];
+  for (const [tolerance, reduced] of [[0.01, decimateChannel(source)], [0.001, decimateChannel(source, 0.001)]]) {
+    assert.ok(reduced.length < source.length);
+    for (const frame of source.filter(frame => frame.pre)) {
+      const preserved = reduced.find(candidate => candidate.time === frame.time);
+      assert.deepEqual(preserved, frame);
+    }
+    assert.deepEqual(reduced[0].value, source[0].value);
+    assert.equal(reduced[0].time, source[0].time);
+    for (const time of times) {
+      const actual = sampleChannel(reduced, time);
+      assert.ok(actual.every((value, axis) => Math.abs(value - pose(time)[axis]) <= tolerance),
+        `Curve error exceeds ${tolerance} at ${time}`);
+    }
+    assert.deepEqual(sampleChannel(reduced, 2), [0, 0, 0]);
+  }
+});
 
 test('procedural profiles require the reviewed version and an available model', () => {
   const records = [{ id: 'minecraft:chest' }, { id: 'minecraft:bell' }, { id: 'other:chest' }];

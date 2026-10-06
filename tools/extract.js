@@ -10,6 +10,7 @@ import { applyTransforms } from './transform.js';
 import { applyPasses } from './passes.js';
 import { buildAnimations } from './animations.js';
 import { proceduralAnimations } from './procedural-animations.js';
+import { decimateProceduralAnimations } from './procedural-decimation.js';
 import { DEFAULT_CACHE, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 
 const ART_VERSION = '2.0.18';
@@ -130,7 +131,7 @@ async function main() {
       await writeFile(proceduralInputs, JSON.stringify(procedural));
       await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
         fileURLToPath(new URL('./ProceduralAnimations.java', import.meta.url)), proceduralInputs, extracted], { cwd: directory });
-      dump.push(...JSON.parse(await readFile(extracted, 'utf8')));
+      dump.push(...decimateProceduralAnimations(JSON.parse(await readFile(extracted, 'utf8'))));
     }
     const { animations, findings } = buildAnimations(dump, records);
     for (const finding of findings) console.warn(`Animation mapping: ${finding}`);
