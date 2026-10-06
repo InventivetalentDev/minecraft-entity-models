@@ -8,6 +8,7 @@ import { blockTextureRecords, expandBlocks, listBlockIds, loadBlockFamilies } fr
 import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { applyPasses } from './passes.js';
+import { buildAnimations } from './animations.js';
 import { DEFAULT_CACHE, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 
 const ART_VERSION = '2.0.18';
@@ -118,9 +119,13 @@ async function main() {
     await applyPasses(records, entry.id, { cache, offline: values.offline });
     const blocks = expandBlocks(await loadBlockFamilies(), records, await listBlockIds(remapped));
     await validateTextures(blockTextureRecords(blocks), entry.id, new Map(), { cache, offline: values.offline });
-    const count = await writeDataset(output, entry, records, { blocks });
+    await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
+      fileURLToPath(new URL('./Animations.java', import.meta.url)), extracted], { cwd: directory });
+    const { animations, findings } = buildAnimations(JSON.parse(await readFile(extracted, 'utf8')), records);
+    for (const finding of findings) console.warn(`Animation mapping: ${finding}`);
+    const count = await writeDataset(output, entry, records, { blocks, animations });
     await writeFile(path.join(output, '_textures.report.json'), stableStringify(textures.report));
-    console.log(`${entry.id}: ${count} models → ${output}`);
+    console.log(`${entry.id}: ${count - animations.length} models, ${animations.length} animation files → ${output}`);
     console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
   } finally {
     await rm(extracted, { force: true });
