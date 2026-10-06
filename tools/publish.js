@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { validateBlocks } from './blocks.js';
 import { validateModel } from './lib.js';
+import { validateAnimationFile } from './animations.js';
 
 function git(cwd, args, { allowFailure = false } = {}) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -51,6 +52,10 @@ async function validateInput(input, version) {
         }
         if (name === 'blocks.json') {
           validateBlocks(data);
+          continue;
+        }
+        if (name.startsWith('animations/')) {
+          validateAnimationFile(name, data);
           continue;
         }
         const match = /^([a-z0-9_.-]+)\/([a-z0-9_./-]+)\.json$/.exec(name);

@@ -84,6 +84,35 @@ Shulker boxes have no `rotation`: their `facing` is not a rotation about the ver
 
 Block families are described in `tools/block-families.json` and expanded per version by `tools/blocks.js`. Parts whose model is missing in a version and blocks without a blockstate file in that version are left out.
 
+## Animations
+
+Keyframe animations that vanilla defines in code (`net.minecraft.client.animation.definitions`, Minecraft 1.19+) are in a separate tree: `animations/minecraft/<id>.json`, with its own `_list.json` files. A file exists for each model ID whose `main` layer is drawn by a model class that uses the definitions, or by a subclass of one. A version without animations has no `animations` directory.
+
+```json
+{
+  "id": "minecraft:warden",
+  "animations": {
+    "emerge": {
+      "length": 6.68, "loop": false,
+      "bones": {
+        "body": {
+          "position": [{"time": 0.52, "value": [0, 56, 0], "interpolation": "catmullrom"}],
+          "rotation": [{"time": 0.52, "value": [0, 0, -0.3926991], "interpolation": "catmullrom"}]
+        }
+      }
+    }
+  }
+}
+```
+
+Animation names are the lower-case field names, without the mob prefix when every field of the class has it. A bone is a part name anywhere in the layer, and `root` is the layer's root part. A bone has up to three channels (`position`, `rotation`, `scale`), each with keyframes in time order.
+
+Values are the game's runtime floats. `time` and `length` are seconds, `rotation` is radians, `position` uses model units in the part space of `pose.offset` (vanilla has already negated the Y of its Y-up source values), and `scale` is the scale minus one. Before each frame vanilla resets every part to its default pose, then adds the sampled vector of each channel to the part's offset, rotation, or scale; `[0, 0, 0]` therefore leaves the part unchanged. The elapsed time is taken modulo `length` when `loop` is true. Between keyframes A and B, the `interpolation` of B applies: `linear` interpolates from A to B, and `catmullrom` is a Catmull-Rom spline through the keyframe before A, A, B, and the keyframe after B (indexes clamp at the ends). The first value applies before the first keyframe and the last value after the last one.
+
+A 1.21.11 keyframe holds a value to arrive at and a value to leave from (1.20.1 has one value). `value` is the one to leave from; optional `pre` is the one to arrive at, is omitted when equal, and replaces B's `value` in `linear` interpolation only. No 1.21.11 animation uses it.
+
+1.20.1 ignores a bone that the model lacks (its warden animations `emerge` and `roar` name `left_ear` and `right_ear`), and extraction prints such bones as warnings. 1.21.11 rejects them when the model is created.
+
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
 
 1. Extract Minecraft 1.17+ (add `--cache DIR` to change the cache or `--offline` to use cached downloads):
@@ -103,5 +132,5 @@ Extraction and conversion require a new output directory. Run tests with `node -
 
 - 1.16.5: 86 model files.
 - 1.17.1: 126 model files.
-- 1.20.1: 161 model files.
-- 1.21.11: 289 model files.
+- 1.20.1: 161 model files, 4 animation files.
+- 1.21.11: 289 model files, 17 animation files.

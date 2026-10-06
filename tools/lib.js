@@ -3,6 +3,7 @@ import path from 'node:path';
 import { validateTransform } from './transform.js';
 import { validatePasses } from './passes.js';
 import { validateBlocks } from './blocks.js';
+import { validateAnimations } from './animations.js';
 
 export function stableStringify(value) {
   function encode(item) {
@@ -99,7 +100,7 @@ export async function writeLists(directory, root = true) {
   await writeFile(path.join(directory, '_list.json'), stableStringify({ directories, files }));
 }
 
-export async function writeDataset(output, versionMetadata, records, { blocks } = {}) {
+export async function writeDataset(output, versionMetadata, records, { blocks, animations = [] } = {}) {
   if (!versionMetadata || typeof versionMetadata.id !== 'string') throw new Error('Missing version id');
   const files = new Map();
   for (const model of records) {
@@ -110,6 +111,11 @@ export async function writeDataset(output, versionMetadata, records, { blocks } 
     files.set(file, stableStringify(model));
   }
   if (blocks) validateBlocks(blocks);
+  for (const animation of animations) {
+    try { validateAnimations(animation); } catch (error) { throw new Error(`animations/${animation?.id}: ${error.message}`); }
+    const { namespace, name } = modelPath(animation.id);
+    files.set(path.join('animations', namespace, `${name}.json`), stableStringify(animation));
+  }
   await mkdir(path.dirname(path.resolve(output)), { recursive: true });
   try {
     await mkdir(output);
