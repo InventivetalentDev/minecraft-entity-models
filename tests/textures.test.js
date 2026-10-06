@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyOverrides, applyStemTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
+import { applyEquipmentTextures, applyOverrides, applyStemTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
 
 const model = id => ({ id: `minecraft:${id}`, layers: { main: {} } });
 
@@ -52,6 +52,23 @@ test('stem matches distinguish layer names and leave duplicate basenames unresol
   assert.equal(missing.get('minecraft:pig#main').candidates.length, 2);
   assert.equal(records[3].layers.main.textureLocation, undefined);
   assert.equal(sources.get('minecraft:creeper#armor'), 'stem');
+});
+
+test('equipment assets with one texture fill the unset main layer of the same model ID', () => {
+  const records = [model('elytra'), model('elytra_baby'), model('saddle'), model('trader_llama')];
+  records[3].layers.main.textureLocation = 'minecraft:textures/entity/llama/creamy.png';
+  const sources = new Map();
+  applyEquipmentTextures({
+    'minecraft:elytra': { layers: { wings: [{ texture: 'minecraft:elytra', use_player_texture: true }] } },
+    'minecraft:saddle': { layers: { horse_saddle: [{ texture: 'minecraft:saddle' }], pig_saddle: [{ texture: 'minecraft:saddle' }] } },
+    'minecraft:trader_llama': { layers: { llama_body: [{ texture: 'minecraft:trader_llama' }] } },
+  }, records, sources);
+  inheritBabyTextures(records, sources);
+  assert.equal(records[0].layers.main.textureLocation, 'minecraft:textures/entity/equipment/wings/elytra.png');
+  assert.equal(records[1].layers.main.textureLocation, records[0].layers.main.textureLocation);
+  assert.equal(records[2].layers.main.textureLocation, undefined);
+  assert.equal(records[3].layers.main.textureLocation, 'minecraft:textures/entity/llama/creamy.png');
+  assert.equal(sources.get('minecraft:elytra#main'), 'equipment');
 });
 
 test('texture override patterns expand captures before exact overrides and suppression', async () => {
