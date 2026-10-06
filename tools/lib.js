@@ -67,7 +67,8 @@ function part(value, inheritedTexture) {
 }
 
 export function validateModel(model) {
-  object(model, ['id', 'layers']);
+  object(model, ['id', 'layers'], ['yUp']);
+  if (Object.hasOwn(model, 'yUp') && model.yUp !== true) throw new Error('Omit false yUp');
   modelPath(model.id);
   if (!model.layers || typeof model.layers !== 'object' || Array.isArray(model.layers) || Object.keys(model.layers).length === 0) {
     throw new Error('Expected at least one model layer');

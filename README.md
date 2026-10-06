@@ -31,6 +31,8 @@ Children repeat the root part shape. Rotations are radians; coordinates and UVs 
 
 Part `texture` is optional, differs from the inherited size (the nearest ancestor override or the layer size), and applies to that part and its descendants until overridden. A child may restore the layer size. Only the legacy converter emits it. `pose.scale` is optional and omitted for `[1, 1, 1]`. Zero texture dimensions identify untextured geometry. Cube UV scaling and face masks are outside this schema.
 
+Models use vanilla model space. Most are Y-down, and their vanilla renderer flips them with `scale(-1, -1, 1)`. A model with top-level `"yUp": true` is drawn without that flip; the field is omitted otherwise.
+
 Optional `textureLocation` values identify default textures using heuristics plus overrides and are omitted when unknown.
 
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
