@@ -35,6 +35,21 @@ Models use vanilla model space. Top-level `transform` lists the operations the v
 
 `transform` describes the default state: an entity with yaw 0, default size and no animation, or a block entity with zero facing rotation and its animation at rest. State-dependent operations are evaluated there and dropped when they become identity; constant operations stay. Operations that a renderer applies to single parts are not included, such as the banner flag offset and the end crystal glass and cube before 1.21.2, and the conduit eye and cage. After `transform`, a block-entity model is in block space (0 to 16 on each axis), and a block state adds its Y rotation about the vertical axis through the block centre.
 
+A layer's optional `render` names the vanilla render type that draws its geometry; it is omitted for `cutout`. Top-level `passes` lists, in draw order, the extra draws that the vanilla renderer adds on top of `main`: `{"layer", "textureLocation"?, "render"?, "when"?, "tint"?}`. `layer` names a layer of the same file, and a pass on `main` draws that geometry again. `textureLocation` and `render` are present only when they differ from the layer's own. Without `when`, vanilla attempts the draw in every state; otherwise `when` labels the entity state that enables it (`powered`, `tamed`, `not_sheared`, `dyed`, `eyes_glowing`, `tendrils_active`, `not_underwater`). `tint` labels a state colour that multiplies the texture (`wool_color`, `collar_color`). Alpha animation, equipment, held items, and passes with a texture chosen at runtime are not listed. `tools/passes.json` holds the reviewed entries with their evidence; `since` limits an entry to that version and later, and 1.16.5 is not annotated.
+
+| `render` | Vanilla render type | Meaning |
+|---|---|---|
+| `cutout` (default) | `entityCutoutNoCull` | Alpha-tested, lit, both faces drawn. |
+| `cutout_cull` | `entityCutout` | As `cutout`, with back faces culled. |
+| `cutout_z_offset` | `entityCutoutNoCullZOffset` | As `cutout`, with a depth offset toward the camera. |
+| `solid` | `entitySolid` | Opaque, lit, back faces culled; texture alpha is ignored. |
+| `translucent` | `entityTranslucent` | Alpha-blended, lit, both faces drawn. |
+| `translucent_emissive` | `entityTranslucentEmissive`, `breezeEyes` | Alpha-blended, full-bright, no depth write. |
+| `eyes` | `eyes` | Full-bright and blended, no depth write, no overlay. |
+| `energy_swirl` | `energySwirl` | Additive, full-bright; the UV offset scrolls with entity age. |
+| `breeze_wind` | `breezeWind` | Alpha-blended, lit; the U offset scrolls with entity age. |
+| `water_mask` | `waterMask` | Writes depth only, to keep water out of a boat. |
+
 Optional `textureLocation` values identify default textures using heuristics plus overrides and are omitted when unknown.
 
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
