@@ -128,6 +128,34 @@ async function variants(jar, entries, records, sources) {
   }
 }
 
+// An equipment asset names the texture of the model sharing its ID, such as the elytra.
+export function applyEquipmentTextures(equipment, records, sources = new Map()) {
+  for (const model of records) {
+    const main = model.layers.main;
+    const types = Object.entries(equipment[model.id]?.layers ?? {});
+    if (!main || main.textureLocation || types.length !== 1 || types[0][1].length !== 1) continue;
+    const [type, [{ texture }]] = types[0];
+    if (typeof texture !== 'string') continue;
+    const [namespace, assetPath] = texture.includes(':') ? texture.split(':') : ['minecraft', texture];
+    main.textureLocation = `${namespace}:textures/entity/equipment/${type}/${assetPath}.png`;
+    sources.set(key(model.id, 'main'), 'equipment');
+  }
+}
+
+async function equipment(jar, entries, records, sources) {
+  const files = entries.filter(entry => /^assets\/minecraft\/equipment\/[a-z0-9_.-]+\.json$/.test(entry));
+  if (!files.length) return;
+  const directory = await mkdtemp(path.join(tmpdir(), 'minecraft-model-equipment-'));
+  try {
+    await run(javaTool('jar'), ['xf', path.resolve(jar), ...files], directory);
+    const assets = {};
+    for (const file of files) assets[`minecraft:${path.basename(file, '.json')}`] = JSON.parse(await readFile(path.join(directory, file), 'utf8'));
+    applyEquipmentTextures(assets, records, sources);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 export async function extractTextures({ jar, records, modelLayers }) {
   let result = { report: { pairings: [], unpaired: [] }, sources: new Map() };
   let entries = [];
@@ -143,7 +171,10 @@ export async function extractTextures({ jar, records, modelLayers }) {
   }
   const strings = (await run(javaTool('java'), [fileURLToPath(new URL('./TextureStrings.java', import.meta.url)), jar])).trim().split(/\r?\n/);
   result.missing = applyStemTextures(strings, records, result.sources);
-  if (modelLayers) await variants(jar, entries, records, result.sources);
+  if (modelLayers) {
+    await variants(jar, entries, records, result.sources);
+    await equipment(jar, entries, records, result.sources);
+  }
   return result;
 }
 
