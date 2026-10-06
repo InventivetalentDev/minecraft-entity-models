@@ -5,7 +5,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { stableStringify, writeDataset } from './lib.js';
 import { addTextures } from './textures.js';
-import { applyYUp } from './y-up.js';
+import { applyTransforms } from './transform.js';
 import { DEFAULT_CACHE, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 
 const ART_VERSION = '2.0.18';
@@ -112,7 +112,7 @@ async function main() {
     const { models: records, modelLayers } = JSON.parse(await readFile(extracted, 'utf8'));
     console.log(`Resolving Minecraft ${entry.id} textures...`);
     const textures = await addTextures(records, { jar: remapped, modelLayers, version: entry.id, cache, offline: values.offline });
-    await applyYUp(records);
+    await applyTransforms(records, entry.id);
     const count = await writeDataset(output, entry, records);
     await writeFile(path.join(output, '_textures.report.json'), stableStringify(textures.report));
     console.log(`${entry.id}: ${count} models → ${output}`);

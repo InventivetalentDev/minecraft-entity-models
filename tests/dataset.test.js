@@ -8,6 +8,7 @@ import { stableStringify, validateModel, writeDataset, writeLists } from '../too
 function model(id = 'minecraft:cow') {
   return {
     id,
+    transform: [],
     layers: {
       main: {
         texture: [64, 32],

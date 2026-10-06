@@ -1,5 +1,6 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { validateTransform } from './transform.js';
 
 export function stableStringify(value) {
   function encode(item) {
@@ -67,8 +68,8 @@ function part(value, inheritedTexture) {
 }
 
 export function validateModel(model) {
-  object(model, ['id', 'layers'], ['yUp']);
-  if (Object.hasOwn(model, 'yUp') && model.yUp !== true) throw new Error('Omit false yUp');
+  object(model, ['id', 'layers', 'transform']);
+  validateTransform(model.transform);
   modelPath(model.id);
   if (!model.layers || typeof model.layers !== 'object' || Array.isArray(model.layers) || Object.keys(model.layers).length === 0) {
     throw new Error('Expected at least one model layer');

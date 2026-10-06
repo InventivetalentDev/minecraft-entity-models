@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stableStringify, validateModel, writeDataset } from './lib.js';
 import { addTextures } from './textures.js';
-import { applyYUp } from './y-up.js';
+import { applyTransforms } from './transform.js';
 import { DEFAULT_CACHE, downloadClient, exists, loadVersion } from './download.js';
 
 function childrenOf(part, id) {
@@ -75,7 +75,7 @@ function readModel(id, parts) {
       },
     },
   };
-  validateModel(model);
+  validateModel({ ...model, transform: [] });
   return { model, mixed: sizes.length > 1 };
 }
 
@@ -127,7 +127,7 @@ async function main(args) {
   const { entry, metadata, directory } = await loadVersion('1.16.5', cache);
   const clientJar = await downloadClient(metadata, directory);
   const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache });
-  await applyYUp(records);
+  await applyTransforms(records, entry.id);
   await writeDataset(output, entry, records);
   await writeFile(join(output, '_textures.report.json'), stableStringify(textures.report));
   console.log(`Wrote ${records.length} models to ${output}; skipped ${skipped} empty models; preserved part texture sizes for ${mixedTextureSizes} models with mixed sizes.`);
