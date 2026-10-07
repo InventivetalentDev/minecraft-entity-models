@@ -86,7 +86,9 @@ Block families are described in `tools/block-families.json` and expanded per ver
 
 ## Animations
 
-Keyframe animations that vanilla defines in code (`net.minecraft.client.animation.definitions`, Minecraft 1.19+) are in a separate tree: `animations/minecraft/<id>.json`, with its own `_list.json` files. A file exists for each model ID whose `main` layer is drawn by a model class that uses the definitions, or by a subclass of one. A version without animations has no `animations` directory.
+Animations are in a separate tree: `animations/minecraft/<id>.json`, with its own `_list.json` files. Extraction reads vanilla keyframe definitions (`net.minecraft.client.animation.definitions`, Minecraft 1.19+) and samples reviewed procedural model poses in 1.21.11. A version without extracted animations has no `animations` directory.
+
+Keyframe definitions map to each model ID whose `main` layer is drawn by a model class that uses the definitions, or by a subclass of one. Procedural profiles name their model IDs and layers explicitly.
 
 ```json
 {
@@ -105,13 +107,31 @@ Keyframe animations that vanilla defines in code (`net.minecraft.client.animatio
 }
 ```
 
-Animation names are the lower-case field names, without the mob prefix when every field of the class has it. A bone is a part name anywhere in the layer, and `root` is the layer's root part. A bone has up to three channels (`position`, `rotation`, `scale`), each with keyframes in time order.
+Definition names are the lower-case field names, without the mob prefix when every field of the class has it. Procedural profiles assign their clip names. A clip's optional `layer` selects a model layer and defaults to `main`; banner sway uses `"layer": "flag"`. A bone is a part name anywhere in that layer, and `root` is the layer's root part. A bone has up to three channels (`position`, `rotation`, `scale`), each with keyframes in time order.
 
-Values are the game's runtime floats. `time` and `length` are seconds, `rotation` is radians, `position` uses model units in the part space of `pose.offset` (vanilla has already negated the Y of its Y-up source values), and `scale` is the scale minus one. Before each frame vanilla resets every part to its default pose, then adds the sampled vector of each channel to the part's offset, rotation, or scale; `[0, 0, 0]` therefore leaves the part unchanged. The elapsed time is taken modulo `length` when `loop` is true. Between keyframes A and B, the `interpolation` of B applies: `linear` interpolates from A to B, and `catmullrom` is a Catmull-Rom spline through the keyframe before A, A, B, and the keyframe after B (indexes clamp at the ends). The first value applies before the first keyframe and the last value after the last one.
+Values come from the game's runtime floats; procedural curves may resample them during keyframe reduction. `time` and `length` are seconds, `rotation` is radians, `position` uses model units in the part space of `pose.offset` (vanilla has already negated the Y of its Y-up source values), and `scale` is the scale minus one. Before each frame vanilla resets every part to its default pose, then adds the sampled vector of each channel to the part's offset, rotation, or scale; `[0, 0, 0]` therefore leaves the part unchanged. The elapsed time is taken modulo `length` when `loop` is true. Between keyframes A and B, the `interpolation` of B applies: `linear` interpolates from A to B, and `catmullrom` is a Catmull-Rom spline through the keyframe before A, A, B, and the keyframe after B (indexes clamp at the ends). The first value applies before the first keyframe and the last value after the last one.
 
-A 1.21.11 keyframe holds a value to arrive at and a value to leave from (1.20.1 has one value). `value` is the one to leave from; optional `pre` is the one to arrive at, is omitted when equal, and replaces B's `value` in `linear` interpolation only. No 1.21.11 animation uses it.
+A 1.21.11 keyframe holds a value to arrive at and a value to leave from (1.20.1 has one value). `value` is the one to leave from; optional `pre` is the one to arrive at, is omitted when equal, and replaces B's `value` in `linear` interpolation only. No native 1.21.11 definition uses it. Sampled clips use it for pose discontinuities, including the bell's final reset.
 
 1.20.1 ignores a bone that the model lacks (its warden animations `emerge` and `roar` name `left_ear` and `right_ear`), and extraction prints such bones as warnings. 1.21.11 rejects them when the model is created.
+
+### Procedural poses
+
+`tools/ProceduralAnimations.java` invokes the game's model methods with inputs from the procedural profiles. It resets each part to its baked pose before each sample and exports the difference from that pose, including nonzero resting offsets. The existing keyframe definitions stay unchanged. Profiles are limited to the reviewed 1.21.11 classes, state fields, and controller timings; other versions still extract their native definitions.
+
+`tools/procedural-blocks.js` covers chest and double-chest lids, shulker boxes, directional bell swings, standing and wall banners, dragon and piglin heads, and enchanting books. Chest, box, and book opening and closing take about 0.5 seconds. Chest inputs include the renderer's cubic easing. Bell swings end at 2.5 seconds with a jump to rest. Banner sway targets the `flag` layer. Book clips hold page-flip input at zero; their idle phase begins where the opening clip ends.
+
+`tools/procedural-entities.js` covers reviewed mob cycles and transitions, including fish swimming, wing and tentacle motion, boat rowing, rabbit jumps, evoker fangs, shulker lids, sheep eating, wolf shaking, and golem and ravager actions. `tools/procedural-humanoids.js` adds walking previews for players, skeletons, zombies, piglins, endermen, and illagers. Shared geometry variants and baby models receive their own samples. The profiles specify which state inputs drive each clip and which remain fixed.
+
+Armor, outer clothing, and sheep wool have separate clips whose names end in the layer name, such as `walk_cycle_boots` and `eat_wool`. Play these alongside the corresponding main-layer clip. Each clip carries its own `layer` and deltas from that layer's baked pose.
+
+Times assume 20 game ticks per second. Profiles sample poses at 120–480 samples per second to form a dense linear reference. `tools/procedural-decimation.js` reduces each bone channel using linear and Catmull-Rom interpolation, with a maximum error of 0.01 per axis against that reference (radians for rotation, model units for position, and scale units for scale). The bound includes times between source samples. The first and last frame's times and values, and every explicit `pre` discontinuity, stay exact.
+
+Clips named `walk_cycle` and `swim_cycle` are movement previews with the fixed input rates recorded in the profile; walking amplitude is one. Their duration does not prescribe an entity's in-game speed. Humanoid `walk_cycle` clips hold `ageInTicks` at zero, so `AnimationUtils.bobModelPart` contributes a constant outward arm `zRot` of 0.1 radians, its maximum; in-game it sways between 0 and 0.1. `walk_sample` previews do not loop because their parts use different phase frequencies. Unset inputs retain the render state's defaults, including neutral look and inactive actions. Illager walking selects neutral, separate arms; the caller must hide the crossed-arms part.
+
+Play each sampled clip as a complete pose relative to the baked model. These clips do not encode the game's state machine or define how to blend simultaneous actions. To reverse a partially opened lid, retain its progress and seek the opposite clip to the matching pose. Age-dependent motions use a fixed starting phase, so arbitrary transitions between them need phase coordination.
+
+Only model-part position, rotation, and scale are sampled. Visibility, renderer pose-stack motion (such as decorated-pot wobble, conduit motion, and book bobbing), camera tracking, randomized behavior, and shader effects remain outside the animation schema. The allay's nested part named `root` cannot be distinguished from the layer root by this bone-name schema. End-crystal quaternion rotations need separate handling at Euler-angle discontinuities. Neither has a procedural profile. Other mixed or state-dependent motions need explicit input profiles; the extractor does not infer a fixed clip by varying every state field.
 
 Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
 
@@ -133,4 +153,4 @@ Extraction and conversion require a new output directory. Run tests with `node -
 - 1.16.5: 86 model files.
 - 1.17.1: 126 model files.
 - 1.20.1: 161 model files, 4 animation files.
-- 1.21.11: 289 model files, 17 animation files.
+- 1.21.11: 289 model files, 178 animation files, 408 clips (74 native and 334 sampled). This includes 60 sampled clips in the 20 nested `boat/` and `chest_boat/` files; counting only top-level animation files gives 348 clips (74 native and 274 sampled).

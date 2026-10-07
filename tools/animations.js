@@ -24,7 +24,11 @@ export function validateAnimations(data) {
   if (typeof data.id !== 'string') throw new Error('Expected a model id');
   for (const [name, animation] of entries(data.animations, 'animation')) {
     if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`Invalid animation name: ${name}`);
-    object(animation, ['length', 'loop', 'bones']);
+    object(animation, ['length', 'loop', 'bones'], ['layer']);
+    if (Object.hasOwn(animation, 'layer') && (typeof animation.layer !== 'string' ||
+        !/^[a-z0-9_./-]+$/.test(animation.layer) || animation.layer === 'main')) {
+      throw new Error('Animation layer must name a non-main layer');
+    }
     if (!Number.isFinite(animation.length) || animation.length < 0) throw new Error('Animation length must be a nonnegative number');
     if (typeof animation.loop !== 'boolean') throw new Error('Animation loop must be a boolean');
     for (const [, channels] of entries(animation.bones, 'bone')) {
@@ -92,15 +96,19 @@ export function buildAnimations(dump, records) {
           bones[bone][channel.target] = channel.keyframes;
         }
       }
-      animations[names.get(field)] = { length: definition.length, loop: definition.loop, bones };
+      animations[names.get(field)] = { length: definition.length, loop: definition.loop, bones,
+        ...(entry.layer && entry.layer !== 'main' ? { layer: entry.layer } : {}) };
     }
     if (entry.modelClasses.length === 0) findings.push(`${entry.class}: no model class references it`);
     else if (entry.modelIds.length === 0) findings.push(`${entry.class}: no model accepted by ${entry.modelClasses.join(', ')}`);
     for (const id of entry.modelIds) {
-      const parts = partNames(records.find(model => model.id === id).layers.main.root);
+      const layer = entry.layer ?? 'main';
+      const root = records.find(model => model.id === id)?.layers[layer]?.root;
+      if (!root) throw new Error(`${id}: animation layer not found: ${layer}`);
+      const parts = partNames(root);
       for (const [name, animation] of Object.entries(animations)) {
         const missing = Object.keys(animation.bones).filter(bone => !parts.has(bone));
-        if (missing.length) findings.push(`${id} ${name}: bones not in the main layer: ${missing.join(', ')}`);
+        if (missing.length) findings.push(`${id} ${name}: bones not in the ${layer} layer: ${missing.join(', ')}`);
       }
       const file = files.get(id) ?? { id, animations: {} };
       for (const name of Object.keys(animations)) {

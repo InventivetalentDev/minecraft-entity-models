@@ -9,6 +9,8 @@ import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { applyPasses } from './passes.js';
 import { buildAnimations } from './animations.js';
+import { proceduralAnimations } from './procedural-animations.js';
+import { decimateProceduralAnimations } from './procedural-decimation.js';
 import { DEFAULT_CACHE, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 
 const ART_VERSION = '2.0.18';
@@ -109,6 +111,7 @@ async function main() {
   }
   console.log(`Extracting Minecraft ${entry.id}...`);
   const extracted = path.join(directory, `models-${process.pid}.json`);
+  const proceduralInputs = path.join(directory, `animation-inputs-${process.pid}.json`);
   try {
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Extract.java', import.meta.url)), extracted], { cwd: directory });
@@ -121,7 +124,16 @@ async function main() {
     await validateTextures(blockTextureRecords(blocks), entry.id, new Map(), { cache, offline: values.offline });
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Animations.java', import.meta.url)), extracted], { cwd: directory });
-    const { animations, findings } = buildAnimations(JSON.parse(await readFile(extracted, 'utf8')), records);
+    const dump = JSON.parse(await readFile(extracted, 'utf8'));
+    const procedural = proceduralAnimations(entry.id, records);
+    if (procedural.length) {
+      console.log(`Sampling Minecraft ${entry.id} procedural animations...`);
+      await writeFile(proceduralInputs, JSON.stringify(procedural));
+      await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
+        fileURLToPath(new URL('./ProceduralAnimations.java', import.meta.url)), proceduralInputs, extracted], { cwd: directory });
+      dump.push(...decimateProceduralAnimations(JSON.parse(await readFile(extracted, 'utf8'))));
+    }
+    const { animations, findings } = buildAnimations(dump, records);
     for (const finding of findings) console.warn(`Animation mapping: ${finding}`);
     const count = await writeDataset(output, entry, records, { blocks, animations });
     await writeFile(path.join(output, '_textures.report.json'), stableStringify(textures.report));
@@ -129,6 +141,7 @@ async function main() {
     console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
   } finally {
     await rm(extracted, { force: true });
+    await rm(proceduralInputs, { force: true });
   }
 }
 
