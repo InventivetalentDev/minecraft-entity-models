@@ -1,0 +1,1 @@
+{"id":"minecraft:leash_knot","layers":{"main":{"root":{"children":{"knot":{"children":{},"cubes":[{"origin":[-3,-8,-3],"size":[6,8,6],"uv":[0,0]}],"pose":{"offset":[0,0,0],"rotation":[0,0,0]}}},"cubes":[],"pose":{"offset":[0,0,0],"rotation":[0,0,0]}},"texture":[32,32],"textureLocation":"minecraft:textures/entity/lead_knot/lead_knot.png"}},"transform":[{"scale":[-1,-1,1]}]}

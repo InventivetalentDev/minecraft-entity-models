@@ -1,0 +1,1 @@
+{"animations":{"spin":{"bones":{"wind":{"rotation":[{"interpolation":"linear","time":0,"value":[0,0.7854,0]},{"interpolation":"linear","time":1.125,"value":[0,7.0685854,0]}]},"wind_charge":{"rotation":[{"interpolation":"linear","time":0,"value":[0,0,0]},{"interpolation":"linear","time":1.125,"value":[0,-6.2831855,0]}]}},"length":1.125,"loop":true}},"id":"minecraft:wind_charge"}
