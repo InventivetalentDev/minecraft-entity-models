@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { nativeAnimations26, normalizeAnimationRoots26, proceduralAnimations26 } from '../tools/animations-26.js';
+import { extractionAdapter } from '../tools/extraction-adapters.js';
+
+test('extraction adapters select only reviewed hooks and sampler dependencies', () => {
+  const current = extractionAdapter('26.1.2');
+  assert.equal(current.normalizeModels, normalizeAnimationRoots26);
+  assert.equal(current.nativeAnimations, nativeAnimations26);
+  for (const version of ['1.21.11', '26.1.3', '26.2']) {
+    const adapter = extractionAdapter(version);
+    const records = [];
+    assert.equal(adapter.normalizeModels(records), records);
+    assert.equal(adapter.nativeAnimations(records), records);
+    assert.deepEqual(adapter.samplerLibraries, []);
+  }
+  for (const version of ['1.17.1', '1.20.1']) {
+    const libraries = extractionAdapter(version).samplerLibraries;
+    assert.equal(libraries.length, 1);
+    assert.equal(libraries[0].downloads.artifact.sha1, '25ea2e8b0c338a877313bd4672d3fe056ea78f0d');
+  }
+});
 
 test('26.1.2 baby axolotl root targets the named child without changing geometry or poses', () => {
   const animatedRoot = { pose: { offset: [0, 24, 0], rotation: [0, 0, 0] }, cubes: [], children: { body: {} } };

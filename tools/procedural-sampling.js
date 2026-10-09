@@ -12,6 +12,11 @@ export function clip(length, loop, valuesAt, { samplesPerSecond = 120, end } = {
   return { length, loop, frames };
 }
 
+export function linearTransitions(valuesAt, sample = clip) {
+  return Object.fromEntries([['open', true], ['close', false]].map(([name, opening]) => [name,
+    sample(0.5, false, time => valuesAt(opening ? time * 2 : 1 - time * 2, time))]));
+}
+
 export function remapClips(clips, convert, rename = name => name) {
   return Object.fromEntries(Object.entries(clips).map(([name, animation]) => [rename(name), {
     ...animation,
@@ -45,7 +50,19 @@ export function steppedClip(ticks, valuesAtTick) {
   return animation;
 }
 
-export function squidTentacleAngle(tick) {
-  const phase = tick * 2 * Math.PI / 32;
-  return phase < Math.PI ? Math.sin(phase * phase / Math.PI) * Math.PI / 4 : 0;
+export function squidCycle(valuesAtAngle) {
+  const tentacle = tick => {
+    const phase = tick * 2 * Math.PI / 32;
+    return phase < Math.PI ? Math.sin(phase * phase / Math.PI) * Math.PI / 4 : 0;
+  };
+  return clip(1.6, true, time => {
+    const tick = Math.floor(time * 20), partial = time * 20 - tick;
+    return valuesAtAngle(tentacle(tick) + (tentacle(tick + 1) - tentacle(tick)) * partial);
+  }, { samplesPerSecond: 240 });
 }
+
+// MathHelper (1.16.5) and Mth (1.17.1/1.20.1) index the same 65,536-entry float sine table.
+const f = Math.fround;
+const sineEntry = index => f(Math.sin((Math.trunc(index) & 65535) * Math.PI * 2 / 65536));
+export const minecraftSin = angle => sineEntry(f(f(angle) * f(10430.378)));
+export const minecraftCos = angle => sineEntry(f(f(f(angle) * f(10430.378)) + 16384));

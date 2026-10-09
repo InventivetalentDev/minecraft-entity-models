@@ -327,7 +327,7 @@ export async function validateTextures(records, version, sources, { cache = '.ca
   }
 }
 
-export async function addTextures(records, { jar, modelLayers, version, cache, offline } = {}) {
+export async function addTextures(records, { jar, modelLayers, version, cache, offline, validate = true } = {}) {
   for (const model of records) for (const value of Object.values(model.layers)) delete value.textureLocation;
   const { report, sources, missing, textureEntries } = jar ? await extractTextures({ jar, records, modelLayers })
     : { report: { pairings: [], unpaired: [] }, sources: new Map(), missing: applyStemTextures([], records) };
@@ -349,7 +349,7 @@ export async function addTextures(records, { jar, modelLayers, version, cache, o
       report.missing.push({ id: model.id, layer, ...reason });
     }
   }
-  await validateTextures(records, version, sources, { cache, offline });
+  if (validate) await validateTextures(records, version, sources, { cache, offline });
   const withTexture = records.filter(model => Object.values(model.layers).some(layer => layer.textureLocation)).length;
   return { report, withTexture, withoutTexture: records.length - withTexture, textureEntries };
 }

@@ -3,6 +3,9 @@ import test from 'node:test';
 import { addClassicBlockModels } from '../tools/classic-models.js';
 import { placeLegacyBanners } from '../tools/legacy-blocks.js';
 import { expandBlocks, loadBlockFamilies } from '../tools/blocks.js';
+import { applyTransforms } from '../tools/transform.js';
+import { addTextures } from '../tools/textures.js';
+import { applyPasses } from '../tools/passes.js';
 
 function model(id, names) {
   const part = () => ({ pose: { offset: [0, 0, 0], rotation: [0, 0, 0] }, cubes: [], children: {} });
@@ -13,6 +16,7 @@ function model(id, names) {
 test('classic block models preserve registered geometry and expose renderer visibility choices', async () => {
   const records = [model('banner', ['pole', 'bar', 'flag']), model('sign/oak', ['sign', 'stick']),
     model('hanging_sign/oak', ['board', 'plank', 'normalChains', 'vChains']), model('shulker', ['base', 'lid', 'head'])];
+  await applyTransforms(records, '1.20.1');
   const original = structuredClone(records);
   await addClassicBlockModels(records, '1.20.1');
   assert.deepEqual(records.slice(0, original.length), original);
@@ -22,10 +26,23 @@ test('classic block models preserve registered geometry and expose renderer visi
   assert.deepEqual(Object.keys(get('shulker_box').layers.main.root.children), ['base', 'lid']);
   assert.deepEqual(Object.keys(get('wall_banner').layers.main.root.children), ['bar']);
   assert.equal(get('standing_banner').layers.flag.root.children.flag.pose.offset[1], -32);
+  assert.deepEqual(get('standing_banner').transform, get('banner').transform);
   const legacyBanner = [{ id: 'minecraft:wall_banner' }];
   placeLegacyBanners(legacyBanner);
   assert.deepEqual(get('wall_banner').transform, legacyBanner[0].transform);
   assert.equal(get('wall_banner').transform[0].translate[1], -2.6666667461395264);
+  const placed = structuredClone(records.map(({ id, transform, layers }) => ({ id, transform,
+    roots: Object.values(layers).map(layer => layer.root) })));
+  const textures = await addTextures(records, { version: '1.20.1', validate: false });
+  await applyPasses(records, '1.20.1');
+  assert.equal(textures.withTexture, records.length);
+  assert.deepEqual(textures.report.missing, []);
+  assert.equal(get('sign/wall/oak').layers.main.textureLocation, 'minecraft:textures/entity/signs/oak.png');
+  assert.equal(get('standing_banner').layers.flag.render, 'solid');
+  assert.equal(get('shulker_box').layers.main.render, undefined);
+  assert.equal(get('shulker').layers.main.render, 'cutout_z_offset');
+  assert.deepEqual(records.map(({ id, transform, layers }) => ({ id, transform,
+    roots: Object.values(layers).map(layer => layer.root) })), placed);
   const blocks = expandBlocks(await loadBlockFamilies(), records);
   for (const id of ['oak_sign', 'oak_wall_sign', 'oak_hanging_sign', 'oak_wall_hanging_sign', 'red_banner', 'red_wall_banner', 'shulker_box']) {
     assert.ok(blocks[`minecraft:${id}`], id);

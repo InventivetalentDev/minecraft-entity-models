@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyEquipmentTextures, applyOverrides, applyStemTextures, applyVariantTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
+import { addTextures, applyEquipmentTextures, applyOverrides, applyStemTextures, applyVariantTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
 import { versionTexture } from '../tools/texture-paths.js';
 
 const model = id => ({ id: `minecraft:${id}`, layers: { main: {} } });
@@ -161,6 +161,11 @@ test('baby textures follow final parent overrides while preserving explicit excl
 test('texture validation rejects missing assets and requires prior HEAD success offline', async t => {
   const cache = await mkdtemp(path.join(tmpdir(), 'model-texture-test-'));
   t.after(() => rm(cache, { recursive: true, force: true }));
+  const options = { version: '1.21.11', cache, offline: true };
+  await assert.rejects(addTextures([model('arrow')], options), /offline texture cache miss/);
+  const deferred = [model('arrow')];
+  assert.equal((await addTextures(deferred, { ...options, validate: false })).withTexture, 1);
+  assert.equal(deferred[0].layers.main.textureLocation, 'minecraft:textures/entity/projectiles/arrow.png');
   const records = [model('cow')];
   records[0].layers.main.textureLocation = 'minecraft:textures/entity/cow/cow.png';
   const sources = new Map([['minecraft:cow#main', 'override']]);

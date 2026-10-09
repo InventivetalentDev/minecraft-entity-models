@@ -1,9 +1,8 @@
 import { expandBlocks, loadBlockFamilies } from './blocks.js';
-import { clip } from './procedural-sampling.js';
+import { clip, linearTransitions, minecraftSin as sin, minecraftCos as cos } from './procedural-sampling.js';
 
 const f = Math.fround;
 const PI = f(Math.PI);
-const sin = angle => f(Math.sin(((Math.trunc(f(angle * f(10430.378))) & 65535) / 65536) * Math.PI * 2));
 
 function select(source, names) {
   const layer = structuredClone(source);
@@ -74,25 +73,23 @@ export function legacyBlockAnimations(records) {
     }
     return { length, loop, bones };
   }
-  const transitions = at => Object.fromEntries([['open', true], ['close', false]].map(([name, opening]) => [name,
-    poses(0.5, false, time => at(opening ? time * 2 : 1 - time * 2))]));
   for (const model of ['chest', 'trapped_chest', 'ender_chest', 'double_chest_left', 'double_chest_right']) {
     const record = records.find(record => record.id === `minecraft:${model}`);
     for (const layer of ['main', 'single']) {
       if (!record.layers[layer]) continue;
       const parts = Object.keys(record.layers[layer].root.children).filter(name => /(?:Lid|Latch)$/.test(name));
-      const clips = transitions(progress => {
+      const clips = linearTransitions(progress => {
         const closed = f(1 - f(progress));
         const angle = -f(f(1 - f(f(closed * closed) * closed)) * f(PI / 2));
         return Object.fromEntries(parts.map(name => [name, { rotation: [angle, 0, 0] }]));
-      });
+      }, poses);
       add(model, layer, Object.fromEntries(Object.entries(clips).map(([name, value]) => [layer === 'main' ? name : `${name}_${layer}`, value])));
     }
   }
   for (const layer of ['main', 'shell']) add('shulker_box', layer,
-    Object.fromEntries(Object.entries(transitions(open => ({ topShell: {
+    Object.fromEntries(Object.entries(linearTransitions(open => ({ topShell: {
       position: [0, -f(f(open) * 8), 0], rotation: [0, f(f(f(270 * f(open)) * PI) / 180), 0],
-    } }))).map(([name, value]) => [layer === 'main' ? name : `${name}_${layer}`, value])));
+    } }), poses)).map(([name, value]) => [layer === 'main' ? name : `${name}_${layer}`, value])));
   for (const [direction, axis, sign] of [['north', 0, -1], ['south', 0, 1], ['east', 2, -1], ['west', 2, 1]]) {
     add('bell', 'main', { [`ring_${direction}`]: poses(2.5, false, time => {
       const ticks = f(time * 20), vector = [0, 0, 0];
@@ -101,7 +98,7 @@ export function legacyBlockAnimations(records) {
     }, { field_20816: { rotation: [0, 0, 0] } }) });
   }
   for (const model of ['banner', 'standing_banner', 'wall_banner']) add(model, model === 'banner' ? 'main' : 'flag', {
-    sway: poses(5, true, time => ({ banner: { rotation: [f(f(f(-0.0125) + f(f(0.01) * sin(f(f(2 * PI) * f(time / 5)) + f(PI / 2)))) * PI), 0, 0],
+    sway: poses(5, true, time => ({ banner: { rotation: [f(f(f(-0.0125) + f(f(0.01) * cos(f(f(2 * PI) * f(time / 5))))) * PI), 0, 0],
       ...(model === 'banner' ? { position: [0, -32, 0] } : {}) } })),
   });
   return result;

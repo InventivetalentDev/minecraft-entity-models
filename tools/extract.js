@@ -8,7 +8,7 @@ import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { applyPasses } from './passes.js';
 import { buildAnimations } from './animations.js';
-import { nativeAnimations26, normalizeAnimationRoots26 } from './animations-26.js';
+import { extractionAdapter } from './extraction-adapters.js';
 import { addClassicBlockModels } from './classic-models.js';
 import { proceduralAnimations, PROCEDURAL_VERSIONS } from './procedural-animations.js';
 import { decimateProceduralAnimations } from './procedural-decimation.js';
@@ -51,6 +51,7 @@ async function main() {
   if (await exists(output)) throw new Error(`Output directory already exists: ${output}`);
   const cache = path.resolve(values.cache || DEFAULT_CACHE);
   const { entry, metadata, directory } = await loadVersion(values.version, cache, values.offline);
+  const adapter = extractionAdapter(entry.id);
   if (/^1\.(\d+)/.test(entry.id) && Number(entry.id.match(/^1\.(\d+)/)[1]) < 17) {
     throw new Error('Use the legacy converter for Minecraft versions before 1.17');
   }
@@ -97,32 +98,26 @@ async function main() {
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Extract.java', import.meta.url)), extracted], { cwd: directory });
     const { models: records, modelLayers } = JSON.parse(await readFile(extracted, 'utf8'));
-    if (entry.id === '26.1.2') normalizeAnimationRoots26(records);
+    adapter.normalizeModels(records);
+    await applyTransforms(records, entry.id);
+    await addClassicBlockModels(records, entry.id);
     console.log(`Resolving Minecraft ${entry.id} textures...`);
     const textures = await addTextures(records, { jar: remapped, modelLayers, version: entry.id, cache, offline: values.offline });
-    await applyTransforms(records, entry.id);
     await applyPasses(records, entry.id, { cache, offline: values.offline, textureEntries: textures.textureEntries });
-    await addClassicBlockModels(records, entry.id);
     const blocks = expandBlocks(await loadBlockFamilies(), records, await listBlockIds(remapped));
     await validateTextures(blockTextureRecords(blocks), entry.id, new Map(), { cache, offline: values.offline });
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Animations.java', import.meta.url)), extracted], { cwd: directory });
     const native = JSON.parse(await readFile(extracted, 'utf8'));
-    const dump = entry.id === '26.1.2' ? nativeAnimations26(native) : native;
+    const dump = adapter.nativeAnimations(native);
     const procedural = proceduralAnimations(entry.id, records);
     if (!PROCEDURAL_VERSIONS.includes(entry.id)) {
       console.warn(`Minecraft ${entry.id} has no reviewed procedural animation profiles; only native definitions are extracted.`);
     }
     if (procedural.length) {
       console.log(`Sampling Minecraft ${entry.id} procedural animations...`);
-      const samplerLibraries = [...libraries];
-      if (entry.id === '1.17.1' || entry.id === '1.20.1') {
-        const checksum = '25ea2e8b0c338a877313bd4672d3fe056ea78f0d';
-        const annotations = path.join(cache, 'libraries', `${checksum}.jar`);
-        await download('https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar',
-          annotations, checksum, values.offline);
-        samplerLibraries.push(annotations);
-      }
+      const samplerLibraries = [...libraries, ...await downloadLibraries(adapter.samplerLibraries,
+        artifact => path.join(cache, 'libraries', `${artifact.sha1}.jar`), values.offline)];
       await writeFile(proceduralInputs, JSON.stringify(procedural));
       await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...samplerLibraries].join(path.delimiter),
         fileURLToPath(new URL('./ProceduralAnimations.java', import.meta.url)), proceduralInputs, extracted], { cwd: directory });

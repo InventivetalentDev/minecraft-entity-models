@@ -28,8 +28,12 @@ export async function extractLegacyData(options) {
       let sent = false;
       const child = execFile(javaTool('java'), args, { cwd: runtime.directory, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
         if (failure) reject(failure);
-        else if (error) reject(new Error(`Legacy animation sampling failed: ${stderr || stdout || error.message}`));
-        else if (!sent) reject(new Error('Legacy runtime did not provide its model inventory'));
+        else if (error) {
+          const logs = stdout.split(/\r?\n/).filter(line => !line.startsWith('MODEL_INVENTORY\t')).join('\n');
+          const details = [['stderr', stderr.trim()], ['stdout', logs.trim()]]
+            .filter(([, text]) => text).map(([stream, text]) => `${stream}:\n${text}`).join('\n');
+          reject(new Error(`Legacy extraction failed: ${details || error.message}`));
+        } else if (!sent) reject(new Error('Legacy runtime did not provide its model inventory'));
         else resolve();
       });
       const fail = error => { failure ??= error; child.kill(); };

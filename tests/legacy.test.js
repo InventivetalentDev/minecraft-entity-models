@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { addLegacyRuntimeLayers, convertLegacy, convertModel } from '../tools/convert-legacy.js';
 import { validateModel } from '../tools/lib.js';
+import { applyLegacyPasses } from '../tools/legacy-passes.js';
 
 test('converts a legacy trident with a mirrored child to one main layer', () => {
   const part = {
@@ -145,4 +146,33 @@ test('rebases runtime part texture inheritance onto the preserved legacy layer s
   assert.deepEqual(added.small.children['0'].children['0'].texture, [16, 16]);
   assert.deepEqual(added.large.texture, [64, 32]);
   assert.doesNotThrow(() => validateModel({ ...record, transform: [] }));
+});
+
+test('preserves runtime models with non-main layers through legacy pass assignment', () => {
+  const part = {
+    textureWidth: 16, textureHeight: 16, textureOffsetU: 0, textureOffsetV: 0,
+    pivotX: 0, pivotY: 0, pivotZ: 0, pitch: 0, yaw: 0, roll: 0, mirror: false,
+    cubes: [{ minX: 0, minY: 0, minZ: 0, maxX: 1, maxY: 1, maxZ: 1 }], children: [],
+  };
+  for (const [id, layer] of [
+    ['armor_stand', 'animated'], ['shulker', 'animated'], ['trident', 'animated'],
+    ['player', 'animated'], ['wolf', 'animated'], ['creeper', 'animated'], ['conduit', 'animated'],
+    ['conduit', 'shell'], ['chest', 'single'], ['sheep', 'fur'],
+  ]) {
+    const records = [];
+    addLegacyRuntimeLayers(records, { [`minecraft:${id}`]: { main: {}, [layer]: { body: part } } });
+    assert.equal(records.length, 1);
+    assert.deepEqual(Object.keys(records[0].layers), [layer]);
+    const geometry = structuredClone(records[0].layers[layer].root);
+    applyLegacyPasses(records);
+    assert.deepEqual(Object.keys(records[0].layers), [layer]);
+    assert.deepEqual(records[0].layers[layer].root, geometry);
+    assert.doesNotThrow(() => validateModel({ ...records[0], transform: [] }));
+    if (id === 'sheep') assert.deepEqual(records[0].passes, [{ layer: 'fur', when: 'not_sheared', tint: 'wool_color' }]);
+    else assert.equal(records[0].passes, undefined);
+    if (id === 'conduit' && layer === 'shell') assert.equal(records[0].layers.shell.render, 'solid');
+    if (id === 'chest') assert.equal(records[0].layers.single.render, 'cutout_cull');
+  }
+  const mainOnly = convertModel('minecraft:sheep', { body: part });
+  assert.throws(() => applyLegacyPasses([mainOnly]), /minecraft:sheep: missing feature layer fur/);
 });

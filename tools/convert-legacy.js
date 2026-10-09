@@ -162,13 +162,13 @@ async function main(args) {
   const runtime = await extractLegacyData(options);
   addLegacyRuntimeLayers(records, runtime.models);
   const blocks = await addLegacyBlockLayers(records, await listBlockIds(clientJar));
-  const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache, offline });
+  const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache, offline, validate: false });
   applyLegacyPasses(records);
   const byId = new Map(records.map(record => [record.id, record]));
-  for (const entry of Object.values(blocks)) for (const part of entry.parts) {
+  for (const block of Object.values(blocks)) for (const part of block.parts) {
     if (part.textureLocation === byId.get(part.model).layers[part.layer ?? 'main'].textureLocation) delete part.textureLocation;
   }
-  const missing = new Map(textures.report.missing.map(entry => [`${entry.id}#${entry.layer}`, entry]));
+  const missing = new Map(textures.report.missing.map(finding => [`${finding.id}#${finding.layer}`, finding]));
   textures.report.missing = records.flatMap(record => Object.entries(record.layers).filter(([, layer]) => !layer.textureLocation)
     .map(([layer]) => ['inner_armor', 'outer_armor', 'armor', 'decor'].includes(layer)
       ? { id: record.id, layer, reason: 'Requires a caller-selected equipment texture' }

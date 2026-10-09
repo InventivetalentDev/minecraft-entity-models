@@ -1,4 +1,4 @@
-import { clip, countdown, remapClips, steppedClip, squidTentacleAngle } from './procedural-sampling.js';
+import { clip, countdown, remapClips, steppedClip, squidCycle } from './procedural-sampling.js';
 import { classicBlockAnimations } from './procedural-classic-blocks.js';
 import { entityAnimations } from './procedural-entities.js';
 
@@ -75,10 +75,7 @@ export function classicAnimations(version, records) {
     isPlayingDead: false, isInWaterOrBubble: water, [ground]: !water, getDeltaMovement: vector(moving ? 0.1 : 0),
     getXRot: 0, getYRot: 0, getModelRotationValues: { $new: 'java.util.HashMap' },
   }, { position: vector(), xRotO: 0, yRotO: 0, xOld: 0, zOld: 0 }), 0, 0, time * 20))])), { continuous: true });
-  add('SquidModel', ['squid', 'glow_squid'], { swim_cycle: clip(1.6, true, time => {
-    const tick = Math.floor(time * 20), partial = time * 20 - tick;
-    return args(null, 0, 0, squidTentacleAngle(tick) + (squidTentacleAngle(tick + 1) - squidTentacleAngle(tick)) * partial);
-  }, { samplesPerSecond: 240 }) });
+  add('SquidModel', ['squid', 'glow_squid'], { swim_cycle: squidCycle(angle => args(null, 0, 0, angle)) });
   add('StriderModel', ['strider'], { idle: cycle(0.2, entity('monster.Strider', { isVehicle: false })) });
   add('PhantomModel', ['phantom'], { fly: cycle(f(7.448451) * f(0.017453292),
     entity('monster.Phantom', { getUniqueFlapTickOffset: 0 })) });
@@ -191,8 +188,9 @@ export function classicAnimations(version, records) {
     for (const layer of ['inner_armor', 'outer_armor']) {
       const models = request.models.filter(id => layers.get(id)?.[layer]);
       if (!models.length) continue;
-      requests.push({ ...request, class: MODEL + 'HumanoidModel', constructor: undefined, models, layer,
-        clips: { [`walk_cycle_${layer}`]: walk(baseHumanoid('monster.Zombie')) } });
+      requests.push({ ...request, models, layer,
+        copyPose: { sourceLayer: 'main', targetClass: MODEL + 'HumanoidModel', method: 'copyPropertiesTo' },
+        clips: Object.fromEntries(Object.entries(request.clips).map(([name, animation]) => [`${name}_${layer}`, animation])) });
     }
   }
   for (const raft of [false, true]) {

@@ -33,6 +33,8 @@ public class ProceduralAnimations {
     private static boolean retainFixtures;
     private static Path fixtureDirectory;
 
+    private record PoseCopy(Object target, Method method, Map<String, ModelPart> sourceParts, Map<String, float[]> sourceDefaults) { }
+
     public static void main(String[] args) {
         int status = 0;
         try {
@@ -62,13 +64,26 @@ public class ProceduralAnimations {
                         if (modelLayer != null && modelLayer.has("poses")) applyPoses(parts, modelLayer.getAsJsonObject("poses"));
                         Map<String, float[]> defaults = pose(parts);
                         Class<?> modelClass = Class.forName(className);
-                        Object model = request.has("poses") ? null : model(modelClass, root, request);
+                        PoseCopy copy = null;
+                        ModelPart modelRoot = root;
+                        if (request.has("copyPose")) {
+                            JsonObject config = request.getAsJsonObject("copyPose");
+                            LayerDefinition sourceDefinition = layers.get(id + "#" + config.get("sourceLayer").getAsString());
+                            if (sourceDefinition == null) throw new IllegalArgumentException("Missing pose source layer");
+                            modelRoot = sourceDefinition.bakeRoot();
+                            Map<String, ModelPart> sourceParts = new TreeMap<>();
+                            collect(modelRoot, "root", sourceParts);
+                            Class<?> targetClass = Class.forName(config.get("targetClass").getAsString());
+                            copy = new PoseCopy(model(targetClass, root, new JsonObject()),
+                                method(modelClass, config.get("method").getAsString(), new Class<?>[] {targetClass}), sourceParts, pose(sourceParts));
+                        }
+                        Object model = request.has("poses") ? null : model(modelClass, modelRoot, request);
                         Method method = request.has("poses") ? null : method(modelClass,
                             request.get("method").getAsString(), types(request.getAsJsonArray("parameters")));
                         Map<String, Object> animations = new TreeMap<>();
                         for (var clip : request.getAsJsonObject("clips").entrySet()) {
                             try {
-                                animations.put(clip.getKey(), sample(model, method, parts, defaults, clip.getValue().getAsJsonObject(), request));
+                                animations.put(clip.getKey(), sample(model, method, parts, defaults, clip.getValue().getAsJsonObject(), request, copy));
                             } catch (Throwable error) {
                                 throw new IllegalArgumentException(clip.getKey() + ": " + reason(error), error);
                             }
@@ -119,19 +134,20 @@ public class ProceduralAnimations {
     }
 
     private static Map<String, Object> sample(Object model, Method method, Map<String, ModelPart> parts,
-            Map<String, float[]> defaults, JsonObject clip, JsonObject request) throws ReflectiveOperationException {
+            Map<String, float[]> defaults, JsonObject clip, JsonObject request, PoseCopy copy) throws ReflectiveOperationException {
         retainFixtures = request.has("continuous");
         RETAINED_FIXTURES.clear();
         if (retainFixtures) {
             restore(parts, defaults);
-            model = model(model.getClass(), parts.get("root"), request);
+            if (copy != null) restore(copy.sourceParts(), copy.sourceDefaults());
+            model = model(model.getClass(), (copy == null ? parts : copy.sourceParts()).get("root"), request);
         }
         Map<String, List<List<Map<String, Object>>>> frames = new TreeMap<>();
         for (String bone : parts.keySet()) frames.put(bone, List.of(new ArrayList<>(), new ArrayList<>(), new ArrayList<>()));
         for (JsonElement element : clip.getAsJsonArray("frames")) {
             JsonObject frame = element.getAsJsonObject();
-            Map<String, float[]> before = frame.has("pre") ? evaluate(model, method, parts, defaults, frame.getAsJsonArray("pre"), request) : null;
-            Map<String, float[]> after = evaluate(model, method, parts, defaults, frame.getAsJsonArray("values"), request);
+            Map<String, float[]> before = frame.has("pre") ? evaluate(model, method, parts, defaults, frame.getAsJsonArray("pre"), request, copy) : null;
+            Map<String, float[]> after = evaluate(model, method, parts, defaults, frame.getAsJsonArray("values"), request, copy);
             for (String bone : parts.keySet()) {
                 for (int channel = 0; channel < TARGETS.length; channel++) {
                     List<Float> value = vector(after.get(bone), defaults.get(bone), channel);
@@ -163,12 +179,16 @@ public class ProceduralAnimations {
     }
 
     private static Map<String, float[]> evaluate(Object model, Method method, Map<String, ModelPart> parts,
-            Map<String, float[]> defaults, JsonArray values, JsonObject request) throws ReflectiveOperationException {
-        if (!request.has("continuous")) restore(parts, defaults);
+            Map<String, float[]> defaults, JsonArray values, JsonObject request, PoseCopy copy) throws ReflectiveOperationException {
+        if (!request.has("continuous")) {
+            restore(parts, defaults);
+            if (copy != null) restore(copy.sourceParts(), copy.sourceDefaults());
+        }
         if (method == null) {
             applyPoses(parts, values.get(0).getAsJsonObject());
         } else {
-            if (request.has("resetModel") && !request.has("continuous")) model = model(model.getClass(), parts.get("root"), request);
+            if (request.has("resetModel") && !request.has("continuous"))
+                model = model(model.getClass(), (copy == null ? parts : copy.sourceParts()).get("root"), request);
             if (request.has("fields")) for (var entry : request.getAsJsonObject("fields").entrySet()) {
                 Field field = model.getClass().getField(entry.getKey());
                 field.set(model, convert(field.getType(), entry.getValue()));
@@ -196,6 +216,7 @@ public class ProceduralAnimations {
                 } finally { instance.set(null, previous); }
             } else method.invoke(model, arguments);
         }
+        if (copy != null) copy.method().invoke(model, copy.target());
         return pose(parts);
     }
 
@@ -340,7 +361,7 @@ public class ProceduralAnimations {
                 return result;
             } catch (NoSuchMethodException error) { }
         }
-        throw new NoSuchMethodException(type.getName() + "." + name);
+        return type.getMethod(name, parameters);
     }
 
     // Classic models read entity getters instead of render-state fields. Fixtures supply reviewed

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classicAnimations } from '../tools/procedural-classic.js';
+import { minecraftSin, minecraftCos } from '../tools/procedural-sampling.js';
 
 const records = (...ids) => ids.map(id => ({ id: `minecraft:${id}`, layers: { main: {} } }));
 
@@ -18,8 +19,48 @@ test('classic block aliases sample their original layers with the alias baked po
     assert.deepEqual(Object.keys(box.clips), ['open', 'close']);
     assert.equal(box.clips.open.frames[0].values[0].lid.y, 24);
     assert.equal(box.clips.open.frames.at(-1).values[0].lid.y, 16);
+    assert.ok(requests.filter(request => request.poses).every(request =>
+      !request.models.includes('minecraft:shulker')));
+    const shulker = requests.find(request => request.models.includes('minecraft:shulker'));
+    assert.equal(shulker.class, 'net.minecraft.client.model.ShulkerModel');
+    assert.deepEqual(Object.keys(shulker.clips), ['open', 'close', 'open_idle']);
+    const rawBanner = requests.find(request => request.models.includes('minecraft:banner'));
+    assert.equal(rawBanner.layer, 'main');
+    assert.equal(rawBanner.modelLayer, undefined);
+    assert.deepEqual(rawBanner.clips, banner.clips);
+    assert.equal(classicAnimations(version, records('banner')).length, 1);
   }
   assert.deepEqual(classicAnimations('1.21.11', input), []);
+});
+
+test('classic armor copies the main model controller with matching clip timing and inputs', () => {
+  const ids = ['piglin', 'piglin_brute', 'zombified_piglin', 'zombie', 'zombie_villager', 'skeleton', 'player', 'player_slim'];
+  const input = ids.map(id => ({ id: `minecraft:${id}`, layers: { main: {}, inner_armor: {}, outer_armor: {} } }));
+  for (const version of ['1.17.1', '1.20.1']) {
+    const requests = classicAnimations(version, input);
+    for (const id of ids) {
+      const main = requests.find(request => !request.layer && request.models.includes(`minecraft:${id}`));
+      const name = id.includes('piglin') ? 'walk_sample' : 'walk_cycle';
+      for (const layer of ['inner_armor', 'outer_armor']) {
+        const armor = requests.find(request => request.layer === layer && request.models.includes(`minecraft:${id}`));
+        assert.equal(armor.class, main.class);
+        assert.deepEqual(armor.constructor, main.constructor);
+        assert.deepEqual(armor.copyPose, { sourceLayer: 'main', targetClass: 'net.minecraft.client.model.HumanoidModel', method: 'copyPropertiesTo' });
+        assert.deepEqual(Object.keys(armor.clips), [`${name}_${layer}`]);
+        assert.deepEqual(armor.clips[`${name}_${layer}`], main.clips[name]);
+        assert.equal(armor.clips[`${name}_${layer}`].loop, !id.includes('piglin'));
+      }
+    }
+  }
+});
+
+test('classic renderer trigonometry matches the Minecraft float table for both angle signs', () => {
+  for (const [angle, sine, cosine] of [[-6.25, 0.03326207, 0.9994467], [-1, -0.8414514, 0.54025215],
+    [0, 0, 1], [0.1, 0.09982981, 0.99500453], [1, 0.8414514, 0.54033285], [1.5707, 1, 1.917476e-4],
+    [6.25, -0.03326207, 0.9994467]]) {
+    assert.equal(minecraftSin(angle), Math.fround(sine));
+    assert.equal(minecraftCos(angle), Math.fround(cosine));
+  }
 });
 
 test('classic tick counters preserve branch changes and final reset poses', () => {

@@ -1,4 +1,4 @@
-import { clip, countdown as countdownClip, remapClips, steppedClip, squidTentacleAngle } from './procedural-sampling.js';
+import { clip, countdown as countdownClip, remapClips, steppedClip, squidCycle, linearTransitions } from './procedural-sampling.js';
 import { entityAnimations } from './procedural-entities.js';
 
 const period = frequency => 2 * Math.PI / Math.fround(frequency) / 20;
@@ -53,10 +53,7 @@ export function legacyAnimationRequests(inventory) {
   const danceValues = tick => [{ getSongPlaying: true, age: tick }, 0, 0, 0, 0, 0];
   add('parrot', { dance_sample: steppedClip(40, danceValues) });
   add('rabbit', { jump: clip(0.5, false, time => [{ getJumpProgress: time * 2 }, 0, 0, time * 20, 0, 0]) });
-  add('squid', { swim_cycle: clip(1.6, true, time => {
-    const tick = Math.floor(time * 20), partial = time * 20 - tick;
-    return [{}, 0, 0, squidTentacleAngle(tick) + (squidTentacleAngle(tick + 1) - squidTentacleAngle(tick)) * partial, 0, 0];
-  }, { samplesPerSecond: 240 }) });
+  add('squid', { swim_cycle: squidCycle(angle => [{}, 0, 0, angle, 0, 0]) });
   const row = (left, right) => clip(0.8, true, time => [{ interpolatePaddlePhase: { byIndex: [
     left ? time * 20 * Math.fround(0.3926991) : 0, right ? time * 20 * Math.fround(0.3926991) : 0,
   ] } }, 0, 0, 0, 0, 0]);
@@ -65,8 +62,6 @@ export function legacyAnimationRequests(inventory) {
   add('strider', { idle: age(0.2), walk_sample: clip(PERIOD, false, time => [{}, time * 20, 1, time * 20, 0, 0]) });
   add('evoker_fangs', { bite: clip(1, false, time => [{}, time, 0, 0, 0, 0]) });
   add('wither', { idle: age(0.1) });
-  const transitions = values => Object.fromEntries([['open', true], ['close', false]].map(([name, opening]) => [name,
-    clip(0.5, false, time => values(opening ? time * 2 : 1 - time * 2, time))]));
   const controllers = entityAnimations(['minecraft:sheep', 'minecraft:shulker', 'minecraft:guardian', 'minecraft:elder_guardian']);
   const shulker = controllers.find(request => request.clips.open && request.models.includes('minecraft:shulker'));
   add('shulker', remapClips(shulker.clips, ([state]) => [{ getOpenProgress: state.peekAmount }, 0, 0, state.ageInTicks, 0, 0]));
@@ -80,7 +75,7 @@ export function legacyAnimationRequests(inventory) {
     getTailAngle: state.spikesAnimation, getSpikesExtension: state.tailAnimation,
   }, 0, 0, state.ageInTicks, 0, 0]), { layer: 'animated' });
   for (const id of ['enchanting_table', 'lectern']) add(id, {
-    ...transitions((open, time) => [time * 20, 0.1, 0.9, open]),
+    ...linearTransitions((open, time) => [time * 20, 0.1, 0.9, open]),
     idle: clip(5 * Math.PI, true, time => [(time + 0.5) * 20, 0.1, 0.9, 1]),
   }, { method: 'setPageAngles' });
   add('dragon_skull', { jaw: clip(0.5, true, time => [time * 20, 0, 0]) }, { method: 'method_2821' });

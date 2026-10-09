@@ -26,20 +26,22 @@ const TEXTURES = {
 export function applyLegacyPasses(records) {
   for (const model of records) {
     const id = model.id.slice(10);
-    if (TEXTURES[id]) model.layers.main.textureLocation = `minecraft:textures/entity/${TEXTURES[id]}.png`;
+    const main = model.layers.main;
+    if (main && TEXTURES[id]) main.textureLocation = `minecraft:textures/entity/${TEXTURES[id]}.png`;
     if (['bed', 'bed_head', 'bed_foot', 'bell', 'banner', 'standing_banner', 'wall_banner', 'enchanting_table', 'lectern'].includes(id)) {
       for (const layer of Object.values(model.layers)) layer.render = 'solid';
     }
     if (['chest', 'trapped_chest', 'ender_chest', 'double_chest_left', 'double_chest_right'].includes(id)) {
       for (const layer of Object.values(model.layers)) layer.render = 'cutout_cull';
     }
-    if (['shulker', 'skeleton_skull', 'wither_skeleton_skull', 'zombie_head', 'creeper_head', 'dragon_skull'].includes(id)) model.layers.main.render = 'cutout_z_offset';
-    if (id === 'conduit') model.layers.shell.render = 'solid';
-    if (id === 'trident') model.layers.main.render = 'solid';
-    if (['player', 'player_slim', 'piglin', 'piglin_brute', 'zombified_piglin', 'wither_skull'].includes(id)) model.layers.main.render = 'translucent';
+    if (main && ['shulker', 'skeleton_skull', 'wither_skeleton_skull', 'zombie_head', 'creeper_head', 'dragon_skull'].includes(id)) main.render = 'cutout_z_offset';
+    if (id === 'conduit' && model.layers.shell) model.layers.shell.render = 'solid';
+    if (main && id === 'trident') main.render = 'solid';
+    if (main && ['player', 'player_slim', 'piglin', 'piglin_brute', 'zombified_piglin', 'wither_skull'].includes(id)) main.render = 'translucent';
     const passes = [];
     for (const definition of PASSES[id] ?? []) {
       const layer = model.layers[definition.layer];
+      if (!main && !layer) continue;
       if (!layer) throw new Error(`${model.id}: missing feature layer ${definition.layer}`);
       const pass = { ...definition, textureLocation: `minecraft:textures/entity/${definition.textureLocation}.png` };
       if (pass.layer !== 'main') {
@@ -50,12 +52,12 @@ export function applyLegacyPasses(records) {
       passes.push(pass);
     }
     if (passes.length) model.passes = passes;
-    if (model.layers.animated) {
-      if (model.layers.main.textureLocation) model.layers.animated.textureLocation = model.layers.main.textureLocation;
-      if (model.layers.main.render) model.layers.animated.render = model.layers.main.render;
+    if (model.layers.animated && main) {
+      if (main.textureLocation) model.layers.animated.textureLocation = main.textureLocation;
+      if (main.render) model.layers.animated.render = main.render;
     }
-    for (const name of ['single', 'shell']) if (model.layers[name] && model.layers.main.textureLocation)
-      model.layers[name].textureLocation = model.layers.main.textureLocation;
+    for (const name of ['single', 'shell']) if (model.layers[name] && main?.textureLocation)
+      model.layers[name].textureLocation = main.textureLocation;
     if (model.layers.saddle && ['pig', 'strider'].includes(id)) model.layers.saddle.textureLocation = `minecraft:textures/entity/${id}/${id}_saddle.png`;
     if (model.layers.armor && id === 'horse') delete model.layers.armor.textureLocation;
     if (model.layers.decor && id === 'trader_llama') model.layers.decor.textureLocation = 'minecraft:textures/entity/llama/decor/trader_llama.png';
