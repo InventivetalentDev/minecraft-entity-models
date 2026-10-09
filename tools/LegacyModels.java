@@ -88,7 +88,6 @@ public class LegacyModels {
             Layer main = model.get("main");
             if (main.parts.values().stream().anyMatch(part -> hasChildren(part))) model.put("animated", namedLayer(main));
         }
-        JsonObject input = new JsonParser().parse(Files.readString(Path.of(args[0]))).getAsJsonObject();
         Map<String, Object> geometry = new TreeMap<>();
         Map<String, Object> inventory = new TreeMap<>();
         for (var model : models.entrySet()) {
@@ -107,6 +106,15 @@ public class LegacyModels {
             geometry.put(model.getKey(), layers);
             inventory.put(model.getKey(), types);
         }
+        String inputs;
+        if (args[0].equals("-")) {
+            var protocol = new java.io.PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out));
+            protocol.println("MODEL_INVENTORY\t" + new GsonBuilder().create().toJson(inventory));
+            protocol.flush();
+            inputs = new java.io.BufferedReader(new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8)).readLine();
+            if (inputs == null) throw new IllegalArgumentException("Missing animation requests on stdin");
+        } else inputs = Files.readString(Path.of(args[0]));
+        JsonObject input = new JsonParser().parse(inputs).getAsJsonObject();
         List<Object> animations = new ArrayList<>();
         for (JsonElement element : input.getAsJsonArray("requests")) {
             JsonObject request = element.getAsJsonObject();

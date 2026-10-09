@@ -125,7 +125,23 @@ A 1.21.11 keyframe holds a value to arrive at and a value to leave from (1.20.1 
 
 `tools/procedural-classic.js` adapts 1.17.1 and 1.20.1 model methods, which read entity getters rather than render-state objects. Reviewed fixtures supply those values without creating a world. Block renderer formulas live in `tools/procedural-classic-blocks.js`. Axolotl poses retain vanilla's rotation history within each finite sample and start each clip with an empty cache. `tools/animations-26.js` selects the renamed adult classes and separate baby models in 26.1.2; models that switched to native definitions retain those definitions instead of the earlier procedural clips.
 
-The 1.16.5 runtime supplements the legacy dumps without renaming their existing parts. Where numeric child names cannot identify an animation target uniquely, it adds an `animated` layer with a named hierarchy. Load the layer named by the clip, and draw `animated` in place of `main` for those models. The two layers are alternative representations of the same model; `animated` is not a render pass.
+The 1.16.5 runtime supplements the legacy dumps without renaming their existing parts. Where numeric child names cannot identify an animation target uniquely, it adds an `animated` layer with a named hierarchy. Draw it in place of `main`, including any passes that redraw `main`; retain each pass's texture, render mode, condition, and tint. This preserves dragon and phantom eyes and tamed-wolf collars. The two layers are alternative representations of the same model; `animated` is not a render pass.
+
+MineRender's explicit `layer`/`layers` selection omits all passes. To preserve them when using `animated`, first resolve the normal draws with the desired `when` states, then replace only their geometry. For an existing `scene` and a `key` identifying a 1.16.5 wolf:
+
+```js
+const selected = await Entities.getEntity(key, undefined, { when: ['tamed'] });
+const animated = await Entities.getEntity(key, undefined, { layer: 'animated' });
+if (!selected || !animated) throw new Error('Wolf model not found');
+const layers = Object.fromEntries(Object.entries(selected.layers).map(([name, draw]) =>
+  name.split('#')[0] === 'main'
+    ? [name.replace(/^main/, 'animated'), { ...draw, layer: animated.layer }]
+    : [name, draw]));
+const model = { ...selected, ...layers.animated, layers };
+const entity = await scene.addEntity(model, { tints: { collar_color: 0xff0000 } });
+```
+
+The clip's `animated` layer targets both `animated` and `animated#2`, keeping the collar's pose aligned with the body.
 
 Armor, outer clothing, and sheep wool have separate clips whose names end in the layer name, such as `walk_cycle_boots` and `eat_wool`. Play these alongside the corresponding main-layer clip. Each clip carries its own `layer` and deltas from that layer's baked pose.
 

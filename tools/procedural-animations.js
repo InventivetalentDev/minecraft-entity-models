@@ -4,10 +4,12 @@ import { humanoidAnimations } from './procedural-humanoids.js';
 import { classicAnimations } from './procedural-classic.js';
 import { proceduralAnimations26 } from './animations-26.js';
 
+export const PROCEDURAL_VERSIONS = ['1.17.1', '1.20.1', '1.21.11', '26.1.2'];
+
 export function proceduralAnimations(version, records) {
-  if (['1.17.1', '1.20.1'].includes(version)) return classicAnimations(version, records);
   // Model methods, state fields, and controller timings are reviewed per release.
-  if (!['1.21.11', '26.1.2'].includes(version)) return [];
+  if (!PROCEDURAL_VERSIONS.includes(version)) return [];
+  if (['1.17.1', '1.20.1'].includes(version)) return classicAnimations(version, records);
   const ids = records.map(record => record.id);
   const entities = entityAnimations(ids);
   const requests = [...blockAnimations(ids), ...entities, ...humanoidAnimations(ids, records)];

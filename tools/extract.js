@@ -1,7 +1,6 @@
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { stableStringify, writeDataset } from './lib.js';
 import { blockTextureRecords, expandBlocks, listBlockIds, loadBlockFamilies } from './blocks.js';
@@ -11,15 +10,16 @@ import { applyPasses } from './passes.js';
 import { buildAnimations } from './animations.js';
 import { nativeAnimations26, normalizeAnimationRoots26 } from './animations-26.js';
 import { addClassicBlockModels } from './classic-models.js';
-import { proceduralAnimations } from './procedural-animations.js';
+import { proceduralAnimations, PROCEDURAL_VERSIONS } from './procedural-animations.js';
 import { decimateProceduralAnimations } from './procedural-decimation.js';
 import { DEFAULT_CACHE, NAMED_CLIENT_CLASSES, clientNeedsRemapping, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
+import { downloadLibraries, javaTool } from './runtime.js';
 
 const ART_VERSION = '2.0.18';
 const ART_SHA1 = '59bd788e0a1bd339256711dee40015a62cdf3cd2';
 const ART_URL = `https://maven.neoforged.net/releases/net/neoforged/AutoRenamingTool/${ART_VERSION}/AutoRenamingTool-${ART_VERSION}-all.jar`;
-const JAVA = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'java') : 'java';
-const JAR = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'jar') : 'jar';
+const JAVA = javaTool('java');
+const JAR = javaTool('jar');
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -31,20 +31,6 @@ function run(command, args, options = {}) {
     child.on('close', code => code === 0 ? resolve(output) : reject(new Error(
       `${path.basename(command)} exited with code ${code}: ${output.trim()}`)));
   });
-}
-
-function allowedLibrary(library) {
-  let allowed = !library.rules;
-  const osName = { darwin: 'osx', win32: 'windows', linux: 'linux' }[process.platform];
-  const arch = { x64: 'x86_64', arm64: 'aarch64', ia32: 'x86' }[process.arch] || process.arch;
-  for (const rule of library.rules || []) {
-    if (rule.os?.name && rule.os.name !== osName) continue;
-    if (rule.os?.arch && !new RegExp(`^(?:${rule.os.arch})$`).test(arch)) continue;
-    if (rule.os?.version && !new RegExp(rule.os.version).test(os.release())) continue;
-    if (rule.features && Object.values(rule.features).some(Boolean)) continue;
-    allowed = rule.action === 'allow';
-  }
-  return allowed;
 }
 
 async function main() {
@@ -84,20 +70,8 @@ async function main() {
     await download(`https://assets.mcasset.cloud/${encodeURIComponent(entry.id)}/mappings/client.txt`, mappingFile, mappings.sha1, values.offline);
     await download(ART_URL, remapper, ART_SHA1, values.offline);
   }
-  const libraries = [];
-  const artifacts = [...new Map(metadata.libraries.filter(allowedLibrary)
-    .map(library => library.downloads?.artifact).filter(Boolean).map(artifact => [artifact.sha1, artifact])).values()];
-  for (let index = 0; index < artifacts.length; index += 6) {
-    const results = await Promise.allSettled(artifacts.slice(index, index + 6).map(async artifact => {
-      const file = path.join(cache, 'libraries', `${artifact.sha1}.jar`);
-      await download(artifact.url, file, artifact.sha1, values.offline);
-      return file;
-    }));
-    for (const result of results) {
-      if (result.status === 'rejected') throw result.reason;
-      libraries.push(result.value);
-    }
-  }
+  const libraries = await downloadLibraries(metadata.libraries,
+    artifact => path.join(cache, 'libraries', `${artifact.sha1}.jar`), values.offline);
   const remapKey = remap && sha1(`${client.sha1}:${mappings.sha1}:${ART_SHA1}`);
   const remapped = remap ? path.join(directory, `mapped-${remapKey}.jar`) : clientJar;
   const checksum = `${remapped}.sha1`;
@@ -136,6 +110,9 @@ async function main() {
     const native = JSON.parse(await readFile(extracted, 'utf8'));
     const dump = entry.id === '26.1.2' ? nativeAnimations26(native) : native;
     const procedural = proceduralAnimations(entry.id, records);
+    if (!PROCEDURAL_VERSIONS.includes(entry.id)) {
+      console.warn(`Minecraft ${entry.id} has no reviewed procedural animation profiles; only native definitions are extracted.`);
+    }
     if (procedural.length) {
       console.log(`Sampling Minecraft ${entry.id} procedural animations...`);
       const samplerLibraries = [...libraries];

@@ -1,4 +1,4 @@
-import { clip } from './procedural-sampling.js';
+import { clip, countdown, remapClips, steppedClip, squidTentacleAngle } from './procedural-sampling.js';
 import { classicBlockAnimations } from './procedural-classic-blocks.js';
 import { entityAnimations } from './procedural-entities.js';
 
@@ -13,9 +13,6 @@ const emptyItem = constant('net.minecraft.world.item.ItemStack.EMPTY');
 const vector = (x = 0, y = 0, z = 0) => ({ $constructor: { parameters: ['double', 'double', 'double'], values: [x, y, z] } });
 const entity = (type, getters, fields) => ({ $entity: ENTITY + type, getters, ...(fields ? { fields } : {}) });
 const args = (subject = null, phase = 0, speed = 0, age = 0, yaw = 0, pitch = 0) => [subject, phase, speed, age, yaw, pitch];
-const remapClips = (clips, convert, rename = name => name) => Object.fromEntries(Object.entries(clips).map(([name, animation]) => [rename(name), {
-  ...animation, frames: animation.frames.map(frame => ({ ...frame, values: convert(frame.values), ...(frame.pre ? { pre: convert(frame.pre) } : {}) })),
-}]));
 const stationary = { getFallFlyingTicks: 0, isVisuallySwimming: false, isUsingItem: false,
   getMainArm: 'RIGHT', getUsedItemHand: 'MAIN_HAND', isCrouching: false,
   getDeltaMovement: vector(), 'getItemBySlot(net.minecraft.world.entity.EquipmentSlot)': emptyItem };
@@ -78,13 +75,9 @@ export function classicAnimations(version, records) {
     isPlayingDead: false, isInWaterOrBubble: water, [ground]: !water, getDeltaMovement: vector(moving ? 0.1 : 0),
     getXRot: 0, getYRot: 0, getModelRotationValues: { $new: 'java.util.HashMap' },
   }, { position: vector(), xRotO: 0, yRotO: 0, xOld: 0, zOld: 0 }), 0, 0, time * 20))])), { continuous: true });
-  const tentacle = tick => {
-    const phase = tick * TAU / 32;
-    return phase < Math.PI ? Math.sin(phase * phase / Math.PI) * Math.PI / 4 : 0;
-  };
   add('SquidModel', ['squid', 'glow_squid'], { swim_cycle: clip(1.6, true, time => {
     const tick = Math.floor(time * 20), partial = time * 20 - tick;
-    return args(null, 0, 0, tentacle(tick) + (tentacle(tick + 1) - tentacle(tick)) * partial);
+    return args(null, 0, 0, squidTentacleAngle(tick) + (squidTentacleAngle(tick + 1) - squidTentacleAngle(tick)) * partial);
   }, { samplesPerSecond: 240 }) });
   add('StriderModel', ['strider'], { idle: cycle(0.2, entity('monster.Strider', { isVehicle: false })) });
   add('PhantomModel', ['phantom'], { fly: cycle(f(7.448451) * f(0.017453292),
@@ -95,15 +88,8 @@ export function classicAnimations(version, records) {
   });
   const parrotValues = (pose, time, tick = Math.floor(time * 20)) => [pose, tick, 0, 0,
     pose === 'FLYING' ? Math.sin(time * 20 * f(1.8)) + 1 : 0, 0, 0];
-  const dance = clip(2, false, time => parrotValues('PARTY', time));
-  for (let tick = 1; tick <= 40; tick++) {
-    const time = tick / 20;
-    dance.frames = dance.frames.filter(frame => Math.abs(frame.time - time) > 1e-10);
-    dance.frames.push({ time, values: parrotValues('PARTY', time, tick), pre: parrotValues('PARTY', time, tick - 1) });
-  }
-  dance.frames.sort((a, b) => a.time - b.time);
   add('ParrotModel', ['parrot'], {
-    dance_sample: dance,
+    dance_sample: steppedClip(40, tick => parrotValues('PARTY', tick / 20, tick)),
     fly: clip(period(1.8), true, time => parrotValues('FLYING', time), { samplesPerSecond: 480 }),
   }, { parameters: [MODEL + 'ParrotModel$State', 'int', ...FLOATS],
     prepare: { method: 'prepare', parameters: [MODEL + 'ParrotModel$State'], arguments: [0] } });
@@ -168,20 +154,6 @@ export function classicAnimations(version, records) {
     })), name => layer === 'main' ? name : `${name}_fur`), { ...prepare(), ...(layer === 'main' ? {} : { layer }) });
   }
 
-  // These controllers decrement integer tick counters. Explicit pre frames retain tick-boundary jumps.
-  function countdown(ticks, values) {
-    const result = clip(ticks / 20, false, time => {
-      const tick = Math.min(ticks - 1, Math.floor(time * 20));
-      return values(ticks - tick, time * 20 - tick);
-    }, { samplesPerSecond: 480, end: values(0, 0) });
-    for (let tick = 1; tick < ticks; tick++) {
-      const time = tick / 20;
-      result.frames = result.frames.filter(frame => Math.abs(frame.time - time) > 1e-10);
-      result.frames.push({ time, values: values(ticks - tick, 0), pre: values(ticks - tick + 1, 1) });
-    }
-    result.frames.sort((a, b) => a.time - b.time);
-    return result;
-  }
   add('IronGolemModel', ['iron_golem'], {
     attack: countdown(10, (left, partial) => [entity('animal.IronGolem', { getAttackAnimationTick: left, getOfferFlowerTick: 0 }), 0, 0, partial]),
   }, { method: 'prepareMobModel', parameters: [ENTITY + 'Entity', 'float', 'float', 'float'] });

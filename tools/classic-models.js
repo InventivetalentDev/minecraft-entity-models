@@ -49,7 +49,7 @@ export async function addClassicBlockModels(records, version) {
     // BannerRenderer uses different translations from the later split models.
     if (model.id === 'minecraft:standing_banner') model.transform = structuredClone(banner.transform);
     if (model.id === 'minecraft:wall_banner') model.transform = [
-      { translate: [8, -2.6666667, 8] }, { translate: [0, -5, -7] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
+      { translate: [8, Math.fround(-1 / 6) * 16, 8] }, { translate: [0, -5, -7] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
     ];
   }
   records.push(...additions);

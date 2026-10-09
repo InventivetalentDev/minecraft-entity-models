@@ -123,7 +123,9 @@ export function addLegacyRuntimeLayers(records, runtime) {
       if (!record.layers[name]) record.layers[name] = layer;
       else for (const [bone, part] of Object.entries(layer.root.children)) {
         if (record.layers[name].root.children[bone]) continue;
-        if (!sameTexture(record.layers[name].texture, layer.texture) && !part.texture) part.texture = layer.texture;
+        const texture = part.texture ?? layer.texture;
+        if (sameTexture(record.layers[name].texture, texture)) delete part.texture;
+        else part.texture = texture;
         record.layers[name].root.children[bone] = part;
       }
     }

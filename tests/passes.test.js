@@ -74,10 +74,17 @@ test('26.1.2 passes use moved eyes and baby overlay textures from the client', a
   t.after(() => rm(cache, { recursive: true, force: true }));
   const records = [model('minecraft:spider'), model('minecraft:wolf_baby')];
   const babyCollar = 'minecraft:textures/entity/wolf/wolf_collar_baby.png';
-  await applyPasses(records, '26.1.2', { cache, textureEntries: new Set([babyCollar]),
+  await applyPasses(records, '26.1.2', { cache, textureEntries: new Set([babyCollar, 'minecraft:textures/entity/spider/spider_eyes.png']),
     fetch: async () => ({ ok: true, status: 200 }) });
   assert.equal(records[0].passes[0].textureLocation, 'minecraft:textures/entity/spider/spider_eyes.png');
   assert.equal(records[1].passes[0].textureLocation, babyCollar);
+  const suffix = [model('minecraft:villager_baby_no_hat')];
+  const babyTexture = 'minecraft:textures/entity/villager/villager_baby.png';
+  await applyPasses(suffix, '26.1.2', { cache, textureEntries: new Set([babyTexture]),
+    entries: [{ ids: ['villager_baby_no_hat'], passes: [{ layer: 'main',
+      textureLocation: 'minecraft:textures/entity/villager/villager.png' }] }],
+    fetch: async () => ({ ok: true, status: 200 }) });
+  assert.equal(suffix[0].passes[0].textureLocation, babyTexture);
 });
 
 test('passes.json uses known modes and gives evidence for every entry', async () => {

@@ -37,6 +37,7 @@ test('26.1.2 profiles use renamed adults and dedicated babies without changing s
     { class: models + 'animal.axolotl.AxolotlModel', models: ['minecraft:axolotl', 'minecraft:axolotl_baby'], clips: { swim: {} } },
     { class: models + 'animal.rabbit.RabbitModel', models: ['minecraft:rabbit'], clips: { jump: {} } },
     { class: 'net.minecraft.client.renderer.blockentity.ShulkerBoxRenderer$ShulkerBoxModel', models: ['minecraft:shulker_box'] },
+    { class: models + 'npc.VillagerModel', models: ['minecraft:villager_baby_no_hat', 'minecraft:villager_babylon'], clips: {} },
   ];
   const before = structuredClone(requests);
   const result = proceduralAnimations26(requests);
@@ -45,6 +46,8 @@ test('26.1.2 profiles use renamed adults and dedicated babies without changing s
     [models + 'animal.feline.BabyCatModel', ['minecraft:cat_baby']],
     [models + 'animal.axolotl.AdultAxolotlModel', ['minecraft:axolotl']],
     [requests[3].class, ['minecraft:shulker_box']],
+    [models + 'npc.BabyVillagerModel', ['minecraft:villager_baby_no_hat']],
+    [models + 'npc.VillagerModel', ['minecraft:villager_babylon']],
   ]);
   assert.deepEqual(requests, before);
 });

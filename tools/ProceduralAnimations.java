@@ -349,7 +349,8 @@ public class ProceduralAnimations {
         Class<?> parent = Class.forName(input.get("$entity").getAsString());
         JsonObject getters = input.getAsJsonObject("getters");
         List<String> getterNames = getters.entrySet().stream().map(Map.Entry::getKey).toList();
-        String key = parent.getName() + getterNames.toString();
+        String key = parent.getName() + getterNames.stream()
+            .map(name -> name + (getters.get(name).isJsonArray() ? "[]" : "")).toList();
         Class<?> type = FIXTURES.get(key);
         if (type == null) {
             String name = "AnimationEntity" + FIXTURES.size();

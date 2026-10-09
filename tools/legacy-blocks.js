@@ -54,7 +54,7 @@ export function placeLegacyBanners(records) {
       { translate: [8, 8, 8] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
     ];
     if (model.id === 'minecraft:wall_banner') model.transform = [
-      { translate: [8, -8 / 3, 8] }, { translate: [0, -5, -7] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
+      { translate: [8, Math.fround(-1 / 6) * 16, 8] }, { translate: [0, -5, -7] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
     ];
   }
 }

@@ -1,3 +1,5 @@
+import { isBabyModel } from './model-ids.js';
+
 const MODEL = 'net.minecraft.client.model.';
 
 const NATIVE_MODELS = {
@@ -97,7 +99,7 @@ export function proceduralAnimations26(requests) {
     const groups = new Map();
     for (const id of request.models) {
       if (id === 'minecraft:axolotl_baby' || id === 'minecraft:fox_baby') continue;
-      const type = id.includes('_baby') && BABY_MODELS[className] || ADULT_MODELS[className] || className;
+      const type = isBabyModel(id) && BABY_MODELS[className] || ADULT_MODELS[className] || className;
       if (!groups.has(type)) groups.set(type, []);
       groups.get(type).push(id);
     }

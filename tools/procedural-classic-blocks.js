@@ -1,16 +1,10 @@
 import { blockAnimations } from './procedural-blocks.js';
+import { remapClips } from './procedural-sampling.js';
 
 const f = Math.fround;
 const PI = f(Math.PI);
 const sin = angle => f(Math.sin((Math.trunc(f(f(angle) * f(10430.378))) & 65535) * Math.PI * 2 / 65536));
 const cos = angle => f(Math.sin((Math.trunc(f(f(f(angle) * f(10430.378)) + 16384)) & 65535) * Math.PI * 2 / 65536));
-
-function mapClips(clips, convert, rename = name => name) {
-  return Object.fromEntries(Object.entries(clips).map(([name, animation]) => [rename(name), {
-    ...animation,
-    frames: animation.frames.map(frame => ({ ...frame, values: convert(frame.values), ...(frame.pre ? { pre: convert(frame.pre) } : {}) })),
-  }]));
-}
 
 // Before render-state models, these poses are calculated inside the block renderers.
 // The float operations and Mth table lookup match the reviewed 1.17.1 and 1.20.1 bytecode.
@@ -25,7 +19,7 @@ export function classicBlockAnimations(modelIds) {
     const models = target.filter(id => available.has(id));
     if (!models.length) continue;
     const poses = (renderer, convert, rename) => requests.push({ class: `net.minecraft.client.renderer.blockentity.${renderer}`,
-      models, poses: true, clips: mapClips(request.clips, convert, rename) });
+      models, poses: true, clips: remapClips(request.clips, convert, rename) });
     switch (source) {
       case 'chest':
         poses('ChestRenderer', ([open]) => {
@@ -50,13 +44,13 @@ export function classicBlockAnimations(modelIds) {
         break;
       case 'book':
         requests.push({ class: 'net.minecraft.client.model.BookModel', models, method: 'setupAnim', parameters: Array(4).fill('float'),
-          clips: mapClips(request.clips, ([state]) => [state.animationPos, state.pageFlip1, state.pageFlip2, state.open]) });
+          clips: remapClips(request.clips, ([state]) => [state.animationPos, state.pageFlip1, state.pageFlip2, state.open]) });
         break;
       case 'dragon_skull':
       case 'piglin_head':
         requests.push({ class: `net.minecraft.client.model.${source === 'dragon_skull' ? 'dragon.DragonHeadModel' : 'PiglinHeadModel'}`,
           models, method: 'setupAnim', parameters: Array(3).fill('float'),
-          clips: mapClips(request.clips, ([state]) => [state.animationPos, state.yRot, state.xRot]) });
+          clips: remapClips(request.clips, ([state]) => [state.animationPos, state.yRot, state.xRot]) });
         break;
     }
   }

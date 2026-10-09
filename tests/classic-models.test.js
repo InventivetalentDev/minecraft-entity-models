@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { addClassicBlockModels } from '../tools/classic-models.js';
+import { placeLegacyBanners } from '../tools/legacy-blocks.js';
 import { expandBlocks, loadBlockFamilies } from '../tools/blocks.js';
 
 function model(id, names) {
@@ -21,6 +22,10 @@ test('classic block models preserve registered geometry and expose renderer visi
   assert.deepEqual(Object.keys(get('shulker_box').layers.main.root.children), ['base', 'lid']);
   assert.deepEqual(Object.keys(get('wall_banner').layers.main.root.children), ['bar']);
   assert.equal(get('standing_banner').layers.flag.root.children.flag.pose.offset[1], -32);
+  const legacyBanner = [{ id: 'minecraft:wall_banner' }];
+  placeLegacyBanners(legacyBanner);
+  assert.deepEqual(get('wall_banner').transform, legacyBanner[0].transform);
+  assert.equal(get('wall_banner').transform[0].translate[1], -2.6666667461395264);
   const blocks = expandBlocks(await loadBlockFamilies(), records);
   for (const id of ['oak_sign', 'oak_wall_sign', 'oak_hanging_sign', 'oak_wall_hanging_sign', 'red_banner', 'red_wall_banner', 'shulker_box']) {
     assert.ok(blocks[`minecraft:${id}`], id);

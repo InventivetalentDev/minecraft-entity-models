@@ -11,10 +11,11 @@ const RENAMED_26 = {
   'turtle/big_sea_turtle': 'turtle/turtle',
 };
 
-export function versionTexture(texture, version, baby = false, textureEntries = new Set()) {
-  if (version !== '26.1.2' || !texture) return texture;
+export function versionTexture(texture, baby = false, textureEntries = new Set()) {
+  if (!texture) return texture;
   const name = /^minecraft:textures\/entity\/(.+)\.png$/.exec(texture)?.[1];
-  if (RENAMED_26[name]) texture = `minecraft:textures/entity/${RENAMED_26[name]}.png`;
+  const renamed = RENAMED_26[name] && `minecraft:textures/entity/${RENAMED_26[name]}.png`;
+  if (renamed && !textureEntries.has(texture) && textureEntries.has(renamed)) texture = renamed;
   if (baby) {
     const candidate = texture === 'minecraft:textures/entity/sniffer/sniffer.png'
       ? 'minecraft:textures/entity/sniffer/snifflet.png' : texture.replace(/\.png$/, '_baby.png');

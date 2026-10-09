@@ -1,27 +1,9 @@
-import { clip } from './procedural-sampling.js';
+import { clip, countdown as countdownClip, remapClips, steppedClip, squidTentacleAngle } from './procedural-sampling.js';
 import { entityAnimations } from './procedural-entities.js';
 
 const period = frequency => 2 * Math.PI / Math.fround(frequency) / 20;
 const PERIOD = period(0.6662);
-const remap = (clips, convert) => Object.fromEntries(Object.entries(clips).map(([name, animation]) => [name, {
-  ...animation, frames: animation.frames.map(frame => ({ ...frame, values: convert(frame.values),
-    ...(frame.pre ? { pre: convert(frame.pre) } : {}) })),
-}]));
-
-function countdown(ticks, getter) {
-  const values = (left, partial) => [{ [getter]: left }, 0, 0, partial];
-  const animation = clip(ticks / 20, false, time => {
-    const tick = Math.min(ticks - 1, Math.floor(time * 20));
-    return values(ticks - tick, time * 20 - tick);
-  }, { samplesPerSecond: 480, end: values(0, 0) });
-  for (let tick = 1; tick < ticks; tick++) {
-    const time = tick / 20;
-    animation.frames = animation.frames.filter(frame => Math.abs(frame.time - time) > 1e-10);
-    animation.frames.push({ time, values: values(ticks - tick, 0), pre: values(ticks - tick + 1, 1) });
-  }
-  animation.frames.sort((a, b) => a.time - b.time);
-  return animation;
-}
+const countdown = (ticks, getter) => countdownClip(ticks, (left, partial) => [{ [getter]: left }, 0, 0, partial]);
 
 export function legacyAnimationRequests(inventory) {
   const requests = [];
@@ -69,22 +51,11 @@ export function legacyAnimationRequests(inventory) {
   for (const id of ['parrot', 'chicken']) add(id, { fly: clip(period(1.8), true,
     time => [{ ...(id === 'parrot' ? { isInAir: true } : {}) }, 0, 0, Math.sin(time * 20 * Math.fround(1.8)) + 1, 0, 0], { samplesPerSecond: 480 }) });
   const danceValues = tick => [{ getSongPlaying: true, age: tick }, 0, 0, 0, 0, 0];
-  const dance = clip(2, false, time => danceValues(Math.floor(time * 20)));
-  for (let tick = 1; tick <= 40; tick++) {
-    const time = tick / 20;
-    dance.frames = dance.frames.filter(frame => Math.abs(frame.time - time) > 1e-10);
-    dance.frames.push({ time, values: danceValues(tick), pre: danceValues(tick - 1) });
-  }
-  dance.frames.sort((a, b) => a.time - b.time);
-  add('parrot', { dance_sample: dance });
+  add('parrot', { dance_sample: steppedClip(40, danceValues) });
   add('rabbit', { jump: clip(0.5, false, time => [{ getJumpProgress: time * 2 }, 0, 0, time * 20, 0, 0]) });
-  const tentacle = tick => {
-    const phase = tick * 2 * Math.PI / 32;
-    return phase < Math.PI ? Math.sin(phase * phase / Math.PI) * Math.PI / 4 : 0;
-  };
   add('squid', { swim_cycle: clip(1.6, true, time => {
     const tick = Math.floor(time * 20), partial = time * 20 - tick;
-    return [{}, 0, 0, tentacle(tick) + (tentacle(tick + 1) - tentacle(tick)) * partial, 0, 0];
+    return [{}, 0, 0, squidTentacleAngle(tick) + (squidTentacleAngle(tick + 1) - squidTentacleAngle(tick)) * partial, 0, 0];
   }, { samplesPerSecond: 240 }) });
   const row = (left, right) => clip(0.8, true, time => [{ interpolatePaddlePhase: { byIndex: [
     left ? time * 20 * Math.fround(0.3926991) : 0, right ? time * 20 * Math.fround(0.3926991) : 0,
@@ -98,14 +69,14 @@ export function legacyAnimationRequests(inventory) {
     clip(0.5, false, time => values(opening ? time * 2 : 1 - time * 2, time))]));
   const controllers = entityAnimations(['minecraft:sheep', 'minecraft:shulker', 'minecraft:guardian', 'minecraft:elder_guardian']);
   const shulker = controllers.find(request => request.clips.open && request.models.includes('minecraft:shulker'));
-  add('shulker', remap(shulker.clips, ([state]) => [{ getOpenProgress: state.peekAmount }, 0, 0, state.ageInTicks, 0, 0]));
+  add('shulker', remapClips(shulker.clips, ([state]) => [{ getOpenProgress: state.peekAmount }, 0, 0, state.ageInTicks, 0, 0]));
   const sheep = controllers.find(request => request.clips.eat);
-  add('sheep', remap(sheep.clips, ([state]) => [{ getNeckAngle: state.headEatPositionScale, getHeadAngle: state.headEatAngleScale }, 0, 0, 0, 0, 0]));
+  add('sheep', remapClips(sheep.clips, ([state]) => [{ getNeckAngle: state.headEatPositionScale, getHeadAngle: state.headEatAngleScale }, 0, 0, 0, 0, 0]));
   add('wolf', { shake: clip(2, false, time => [{ lastShakeProgress: time, shakeProgress: time }, 0, 0, 0, 0, 0], { samplesPerSecond: 240 }) });
   for (const id of ['villager', 'wandering_trader']) add(id, { unhappy: age(0.45, { getHeadRollingTimeLeft: 1 }) }, { entityClass: 'net.minecraft.entity.passive.VillagerEntity' });
   // Yarn 1.16.5 calls spike extension getTailAngle and tail phase getSpikesExtension.
   const guardian = controllers.find(request => request.models.includes('minecraft:guardian'));
-  for (const id of ['guardian', 'elder_guardian']) add(id, remap(guardian.clips, ([state]) => [{
+  for (const id of ['guardian', 'elder_guardian']) add(id, remapClips(guardian.clips, ([state]) => [{
     getTailAngle: state.spikesAnimation, getSpikesExtension: state.tailAnimation,
   }, 0, 0, state.ageInTicks, 0, 0]), { layer: 'animated' });
   for (const id of ['enchanting_table', 'lectern']) add(id, {

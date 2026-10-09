@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { addLegacyRuntimeLayers, convertLegacy, convertModel } from '../tools/convert-legacy.js';
+import { validateModel } from '../tools/lib.js';
 
 test('converts a legacy trident with a mirrored child to one main layer', () => {
   const part = {
@@ -122,4 +123,26 @@ test('uses recovered per-cube UV, dilation and mirror for newly extracted parts'
   const cubes = convertModel('example:armor', { body: part }).layers.main.root.children.body.cubes;
   assert.deepEqual(cubes[0], { origin: [0, 0, 0], size: [2, 3, 4], uv: [3, 5], grow: [1, 2, 3] });
   assert.deepEqual(cubes[1], { origin: [0, 0, 0], size: [2, 3, 4], uv: [20, 25], mirror: true });
+});
+
+
+test('rebases runtime part texture inheritance onto the preserved legacy layer size', () => {
+  const part = {
+    textureWidth: 16, textureHeight: 16, textureOffsetU: 0, textureOffsetV: 0,
+    pivotX: 0, pivotY: 0, pivotZ: 0, pitch: 0, yaw: 0, roll: 0, mirror: false,
+    cubes: [{ minX: 0, minY: 0, minZ: 0, maxX: 1, maxY: 1, maxZ: 1 }], children: [],
+  };
+  const record = convertModel('example:mob', { body: part });
+  const original = structuredClone(record.layers.main.root.children.body);
+  const large = { ...part, textureWidth: 64, textureHeight: 32 };
+  const small = { ...part, children: [{ ...large, children: [part] }] };
+  addLegacyRuntimeLayers([record], { 'example:mob': { main: { body: large, small, large } } });
+  assert.deepEqual(record.layers.main.texture, [16, 16]);
+  assert.deepEqual(record.layers.main.root.children.body, original);
+  const added = record.layers.main.root.children;
+  assert.equal(Object.hasOwn(added.small, 'texture'), false);
+  assert.deepEqual(added.small.children['0'].texture, [64, 32]);
+  assert.deepEqual(added.small.children['0'].children['0'].texture, [16, 16]);
+  assert.deepEqual(added.large.texture, [64, 32]);
+  assert.doesNotThrow(() => validateModel({ ...record, transform: [] }));
 });

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { validateTextures } from './textures.js';
 import { versionTexture } from './texture-paths.js';
+import { isBabyModel } from './model-ids.js';
 
 // Render modes and the vanilla RenderTypes family each one stands for. `cutout` is the default and is never written to a layer.
 export const RENDER_MODES = {
@@ -77,7 +78,7 @@ export async function applyPasses(records, version, { entries, textureEntries, .
         if (!Object.hasOwn(model.layers, name)) continue;
         const layer = model.layers[name];
         const pass = { layer: name };
-        const texture = versionTexture(textureLocation, version, id.endsWith('_baby'), textureEntries);
+        const texture = versionTexture(textureLocation, isBabyModel(id) || name === 'baby', textureEntries);
         if (texture && texture !== layer.textureLocation) pass.textureLocation = texture;
         if (render && render !== (layer.render ?? 'cutout')) pass.render = render;
         if (when) pass.when = when;
