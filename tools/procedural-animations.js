@@ -1,10 +1,13 @@
 import { blockAnimations } from './procedural-blocks.js';
 import { entityAnimations } from './procedural-entities.js';
 import { humanoidAnimations } from './procedural-humanoids.js';
+import { classicAnimations } from './procedural-classic.js';
+import { proceduralAnimations26 } from './animations-26.js';
 
 export function proceduralAnimations(version, records) {
-  // Model methods, state fields, and controller timings are reviewed against this release.
-  if (version !== '1.21.11') return [];
+  if (['1.17.1', '1.20.1'].includes(version)) return classicAnimations(version, records);
+  // Model methods, state fields, and controller timings are reviewed per release.
+  if (!['1.21.11', '26.1.2'].includes(version)) return [];
   const ids = records.map(record => record.id);
   const entities = entityAnimations(ids);
   const requests = [...blockAnimations(ids), ...entities, ...humanoidAnimations(ids, records)];
@@ -19,5 +22,5 @@ export function proceduralAnimations(version, records) {
       }
     }
   }
-  return requests;
+  return version === '26.1.2' ? proceduralAnimations26(requests) : requests;
 }

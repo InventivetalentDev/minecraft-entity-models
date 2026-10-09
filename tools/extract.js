@@ -9,14 +9,17 @@ import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { applyPasses } from './passes.js';
 import { buildAnimations } from './animations.js';
+import { nativeAnimations26, normalizeAnimationRoots26 } from './animations-26.js';
+import { addClassicBlockModels } from './classic-models.js';
 import { proceduralAnimations } from './procedural-animations.js';
 import { decimateProceduralAnimations } from './procedural-decimation.js';
-import { DEFAULT_CACHE, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
+import { DEFAULT_CACHE, NAMED_CLIENT_CLASSES, clientNeedsRemapping, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 
 const ART_VERSION = '2.0.18';
 const ART_SHA1 = '59bd788e0a1bd339256711dee40015a62cdf3cd2';
 const ART_URL = `https://maven.neoforged.net/releases/net/neoforged/AutoRenamingTool/${ART_VERSION}/AutoRenamingTool-${ART_VERSION}-all.jar`;
 const JAVA = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'java') : 'java';
+const JAR = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'jar') : 'jar';
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -62,7 +65,7 @@ async function main() {
   if (await exists(output)) throw new Error(`Output directory already exists: ${output}`);
   const cache = path.resolve(values.cache || DEFAULT_CACHE);
   const { entry, metadata, directory } = await loadVersion(values.version, cache, values.offline);
-  if ((/^1\.(\d+)/.test(entry.id) && Number(entry.id.match(/^1\.(\d+)/)[1]) < 17) || !metadata.downloads.client_mappings) {
+  if (/^1\.(\d+)/.test(entry.id) && Number(entry.id.match(/^1\.(\d+)/)[1]) < 17) {
     throw new Error('Use the legacy converter for Minecraft versions before 1.17');
   }
   const requiredJava = Math.max(17, metadata.javaVersion?.majorVersion || 17);
@@ -73,10 +76,14 @@ async function main() {
   const client = metadata.downloads.client;
   const mappings = metadata.downloads.client_mappings;
   const clientJar = await downloadClient(metadata, directory, values.offline);
-  const mappingFile = path.join(directory, `mappings-${mappings.sha1}.txt`);
+  const remap = clientNeedsRemapping(metadata, mappings ? [] :
+    (await run(JAR, ['tf', clientJar, ...NAMED_CLIENT_CLASSES])).trim().split(/\r?\n/));
+  const mappingFile = mappings && path.join(directory, `mappings-${mappings.sha1}.txt`);
   const remapper = path.join(cache, `AutoRenamingTool-${ART_VERSION}-all.jar`);
-  await download(`https://assets.mcasset.cloud/${encodeURIComponent(entry.id)}/mappings/client.txt`, mappingFile, mappings.sha1, values.offline);
-  await download(ART_URL, remapper, ART_SHA1, values.offline);
+  if (remap) {
+    await download(`https://assets.mcasset.cloud/${encodeURIComponent(entry.id)}/mappings/client.txt`, mappingFile, mappings.sha1, values.offline);
+    await download(ART_URL, remapper, ART_SHA1, values.offline);
+  }
   const libraries = [];
   const artifacts = [...new Map(metadata.libraries.filter(allowedLibrary)
     .map(library => library.downloads?.artifact).filter(Boolean).map(artifact => [artifact.sha1, artifact])).values()];
@@ -91,12 +98,12 @@ async function main() {
       libraries.push(result.value);
     }
   }
-  const remapKey = sha1(`${client.sha1}:${mappings.sha1}:${ART_SHA1}`);
-  const remapped = path.join(directory, `mapped-${remapKey}.jar`);
+  const remapKey = remap && sha1(`${client.sha1}:${mappings.sha1}:${ART_SHA1}`);
+  const remapped = remap ? path.join(directory, `mapped-${remapKey}.jar`) : clientJar;
   const checksum = `${remapped}.sha1`;
-  if (await exists(remapped) && await exists(checksum)) {
+  if (remap && await exists(remapped) && await exists(checksum)) {
     if (sha1(await readFile(remapped)) !== (await readFile(checksum, 'utf8')).trim()) throw new Error(`SHA-1 mismatch: ${remapped}`);
-  } else {
+  } else if (remap) {
     console.log(`Remapping Minecraft ${entry.id}...`);
     const temporary = `${remapped}.${process.pid}.tmp.jar`;
     try {
@@ -116,20 +123,31 @@ async function main() {
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Extract.java', import.meta.url)), extracted], { cwd: directory });
     const { models: records, modelLayers } = JSON.parse(await readFile(extracted, 'utf8'));
+    if (entry.id === '26.1.2') normalizeAnimationRoots26(records);
     console.log(`Resolving Minecraft ${entry.id} textures...`);
     const textures = await addTextures(records, { jar: remapped, modelLayers, version: entry.id, cache, offline: values.offline });
     await applyTransforms(records, entry.id);
-    await applyPasses(records, entry.id, { cache, offline: values.offline });
+    await applyPasses(records, entry.id, { cache, offline: values.offline, textureEntries: textures.textureEntries });
+    await addClassicBlockModels(records, entry.id);
     const blocks = expandBlocks(await loadBlockFamilies(), records, await listBlockIds(remapped));
     await validateTextures(blockTextureRecords(blocks), entry.id, new Map(), { cache, offline: values.offline });
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Animations.java', import.meta.url)), extracted], { cwd: directory });
-    const dump = JSON.parse(await readFile(extracted, 'utf8'));
+    const native = JSON.parse(await readFile(extracted, 'utf8'));
+    const dump = entry.id === '26.1.2' ? nativeAnimations26(native) : native;
     const procedural = proceduralAnimations(entry.id, records);
     if (procedural.length) {
       console.log(`Sampling Minecraft ${entry.id} procedural animations...`);
+      const samplerLibraries = [...libraries];
+      if (entry.id === '1.17.1' || entry.id === '1.20.1') {
+        const checksum = '25ea2e8b0c338a877313bd4672d3fe056ea78f0d';
+        const annotations = path.join(cache, 'libraries', `${checksum}.jar`);
+        await download('https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar',
+          annotations, checksum, values.offline);
+        samplerLibraries.push(annotations);
+      }
       await writeFile(proceduralInputs, JSON.stringify(procedural));
-      await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
+      await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...samplerLibraries].join(path.delimiter),
         fileURLToPath(new URL('./ProceduralAnimations.java', import.meta.url)), proceduralInputs, extracted], { cwd: directory });
       dump.push(...decimateProceduralAnimations(JSON.parse(await readFile(extracted, 'utf8'))));
     }
@@ -138,7 +156,8 @@ async function main() {
     const count = await writeDataset(output, entry, records, { blocks, animations });
     await writeFile(path.join(output, '_textures.report.json'), stableStringify(textures.report));
     console.log(`${entry.id}: ${count - animations.length} models, ${animations.length} animation files → ${output}`);
-    console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
+    const withTexture = records.filter(model => Object.values(model.layers).some(layer => layer.textureLocation)).length;
+    console.log(`${withTexture} models with a texture; ${records.length - withTexture} without.`);
   } finally {
     await rm(extracted, { force: true });
     await rm(proceduralInputs, { force: true });

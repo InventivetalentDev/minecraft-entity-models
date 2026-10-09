@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { validateTextures } from './textures.js';
+import { versionTexture } from './texture-paths.js';
 
 // Render modes and the vanilla RenderTypes family each one stands for. `cutout` is the default and is never written to a layer.
 export const RENDER_MODES = {
@@ -54,7 +55,7 @@ export function validatePasses(model) {
 
 // passes.json lists, per model ID, the layer render modes and the extra draws of the vanilla renderer, with the evidence for each.
 // IDs and layers that a version lacks are skipped. Remaining keyword arguments go to validateTextures.
-export async function applyPasses(records, version, { entries, ...textureOptions } = {}) {
+export async function applyPasses(records, version, { entries, textureEntries, ...textureOptions } = {}) {
   entries ??= JSON.parse(await readFile(new URL('./passes.json', import.meta.url), 'utf8'));
   for (const model of records) {
     delete model.passes;
@@ -76,7 +77,8 @@ export async function applyPasses(records, version, { entries, ...textureOptions
         if (!Object.hasOwn(model.layers, name)) continue;
         const layer = model.layers[name];
         const pass = { layer: name };
-        if (textureLocation && textureLocation !== layer.textureLocation) pass.textureLocation = textureLocation;
+        const texture = versionTexture(textureLocation, version, id.endsWith('_baby'), textureEntries);
+        if (texture && texture !== layer.textureLocation) pass.textureLocation = texture;
         if (render && render !== (layer.render ?? 'cutout')) pass.render = render;
         if (when) pass.when = when;
         if (tint) pass.tint = tint;

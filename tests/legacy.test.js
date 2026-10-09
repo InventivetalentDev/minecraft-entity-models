@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { convertLegacy, convertModel } from '../tools/convert-legacy.js';
+import { addLegacyRuntimeLayers, convertLegacy, convertModel } from '../tools/convert-legacy.js';
 
 test('converts a legacy trident with a mirrored child to one main layer', () => {
   const part = {
@@ -90,4 +90,36 @@ test('inherits and resets a legacy part texture override through its children', 
   assert.deepEqual(reset.texture, [64, 32]);
   assert.equal(Object.hasOwn(reset.children['0'], 'texture'), false);
   assert.equal(convertModel('minecraft:beacon', {}), null);
+});
+
+
+test('adds animation hierarchies without changing legacy part names or geometry', () => {
+  const part = {
+    textureWidth: 16, textureHeight: 16, textureOffsetU: 0, textureOffsetV: 0,
+    pivotX: 0, pivotY: 0, pivotZ: 0, pitch: 0, yaw: 0, roll: 0, mirror: false,
+    cubes: [{ minX: 0, minY: 0, minZ: 0, maxX: 1, maxY: 1, maxZ: 1 }], children: [],
+  };
+  const parent = { ...part, children: [{ ...part, name: 'tail' }] };
+  const original = convertModel('example:mob', { body: parent });
+  const expected = structuredClone(original);
+  const records = [original];
+  addLegacyRuntimeLayers(records, { 'example:mob': { main: { body: { ...parent, pivotY: 24 } }, animated: { body: parent } } });
+  assert.deepEqual(original.layers.main, expected.layers.main);
+  assert.deepEqual(Object.keys(original.layers.main.root.children.body.children), ['0']);
+  assert.deepEqual(Object.keys(original.layers.animated.root.children.body.children), ['tail']);
+  assert.equal(original.passes, undefined);
+});
+
+test('uses recovered per-cube UV, dilation and mirror for newly extracted parts', () => {
+  const part = {
+    textureWidth: 64, textureHeight: 32, textureOffsetU: 20, textureOffsetV: 25,
+    pivotX: 0, pivotY: 0, pivotZ: 0, pitch: 0, yaw: 0, roll: 0, mirror: true,
+    cubes: [
+      { minX: 0, minY: 0, minZ: 0, maxX: 2, maxY: 3, maxZ: 4, uv: [3, 5], grow: [1, 2, 3], mirror: false },
+      { minX: 0, minY: 0, minZ: 0, maxX: 2, maxY: 3, maxZ: 4, uv: [20, 25], grow: [0, 0, 0], mirror: true },
+    ], children: [],
+  };
+  const cubes = convertModel('example:armor', { body: part }).layers.main.root.children.body.cubes;
+  assert.deepEqual(cubes[0], { origin: [0, 0, 0], size: [2, 3, 4], uv: [3, 5], grow: [1, 2, 3] });
+  assert.deepEqual(cubes[1], { origin: [0, 0, 0], size: [2, 3, 4], uv: [20, 25], mirror: true });
 });

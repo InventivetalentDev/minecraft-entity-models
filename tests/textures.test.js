@@ -3,9 +3,40 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyEquipmentTextures, applyOverrides, applyStemTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
+import { applyEquipmentTextures, applyOverrides, applyStemTextures, applyVariantTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
+import { versionTexture } from '../tools/texture-paths.js';
 
 const model = id => ({ id: `minecraft:${id}`, layers: { main: {} } });
+
+test('26.1.2 variants retain separate baby assets and select cold and warm geometry', () => {
+  const records = ['cow', 'cow_baby', 'cold_cow', 'cold_cow_baby', 'warm_cow'].map(model);
+  const variants = ['temperate', 'cold', 'warm'].map(variant => ({ name: 'cow', variant, data: {
+    asset_id: `minecraft:entity/cow/cow_${variant}`, baby_asset_id: `minecraft:entity/cow/cow_${variant}_baby`,
+    ...(variant === 'temperate' ? {} : { model: variant }),
+  } }));
+  const sources = new Map();
+  applyVariantTextures(variants, records, sources, '26.1.2');
+  inheritBabyTextures(records, sources);
+  assert.deepEqual(records.map(record => record.layers.main.textureLocation),
+    ['temperate', 'temperate_baby', 'cold', 'cold_baby', 'warm'].map(name => `minecraft:textures/entity/cow/cow_${name}.png`));
+  const older = ['cow', 'cow_baby', 'cold_cow'].map(model);
+  applyVariantTextures(variants, older, new Map(), '1.21.11');
+  assert.equal(older[1].layers.main.textureLocation, older[0].layers.main.textureLocation);
+  assert.equal(older[2].layers.main.textureLocation, undefined);
+});
+
+test('26.1.2 texture paths follow moved assets and only use baby textures present in the jar', () => {
+  const cat = 'minecraft:textures/entity/cat/black.png';
+  const baby = 'minecraft:textures/entity/cat/cat_black_baby.png';
+  const entries = new Set([baby, 'minecraft:textures/entity/sniffer/snifflet.png']);
+  assert.equal(versionTexture(cat, '1.21.11', true, entries), cat);
+  assert.equal(versionTexture(cat, '26.1.2', true, entries), baby);
+  assert.equal(versionTexture(cat, '26.1.2', true), 'minecraft:textures/entity/cat/cat_black.png');
+  assert.equal(versionTexture('minecraft:textures/entity/sniffer/sniffer.png', '26.1.2', true, entries),
+    'minecraft:textures/entity/sniffer/snifflet.png');
+  assert.equal(versionTexture('minecraft:textures/entity/spider_eyes.png', '26.1.2'),
+    'minecraft:textures/entity/spider/spider_eyes.png');
+});
 
 test('javap pairing ignores armor sets, resolves aliases, and shares one texture across layers', async () => {
   const fixture = await readFile(new URL('./fixtures/renderers.javap.txt', import.meta.url), 'utf8');

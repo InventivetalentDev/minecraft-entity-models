@@ -4,6 +4,8 @@ import path from 'node:path';
 
 const MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 export const DEFAULT_CACHE = '.cache/minecraft-entity-models';
+export const NAMED_CLIENT_CLASSES = ['net/minecraft/SharedConstants.class', 'net/minecraft/client/model/geom/LayerDefinitions.class',
+  'net/minecraft/client/model/geom/ModelLayers.class'];
 
 export function sha1(bytes) {
   return createHash('sha1').update(bytes).digest('hex');
@@ -49,4 +51,12 @@ export async function downloadClient(metadata, directory, offline = false) {
   const file = path.join(directory, `client-${client.sha1}.jar`);
   await download(client.url, file, client.sha1, offline);
   return file;
+}
+
+export function clientNeedsRemapping(metadata, entries = []) {
+  if (metadata.downloads.client_mappings) return true;
+  const named = new Set(entries);
+  const missing = NAMED_CLIENT_CLASSES.filter(name => !named.has(name));
+  if (missing.length) throw new Error(`Client has no mappings and is missing named classes: ${missing.join(', ')}`);
+  return false;
 }

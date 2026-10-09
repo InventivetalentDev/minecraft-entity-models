@@ -2,9 +2,15 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stableStringify, validateModel, writeDataset } from './lib.js';
-import { addTextures } from './textures.js';
+import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { DEFAULT_CACHE, downloadClient, exists, loadVersion } from './download.js';
+import { extractLegacyData } from './legacy-runtime.js';
+import { addLegacyBlockLayers, legacyBlockAnimations, placeLegacyBanners } from './legacy-blocks.js';
+import { applyLegacyPasses } from './legacy-passes.js';
+import { blockTextureRecords, listBlockIds } from './blocks.js';
+import { buildAnimations } from './animations.js';
+import { decimateProceduralAnimations } from './procedural-decimation.js';
 
 function childrenOf(part, id) {
   if (!part || !Array.isArray(part.cubes) || !Array.isArray(part.children)) {
@@ -34,7 +40,7 @@ function sameTexture(left, right) {
   return left[0] === right[0] && left[1] === right[1];
 }
 
-function convertPart(part, id, inheritedTexture) {
+function convertPart(part, id, inheritedTexture, named = false) {
   const children = childrenOf(part, id);
   const partTexture = [part.textureWidth, part.textureHeight];
   const overrideTexture = part.cubes.length > 0 && !sameTexture(partTexture, inheritedTexture);
@@ -48,14 +54,15 @@ function convertPart(part, id, inheritedTexture) {
     cubes: part.cubes.map(cube => ({
       origin: [cube.minX, cube.minY, cube.minZ],
       size: [cube.maxX - cube.minX, cube.maxY - cube.minY, cube.maxZ - cube.minZ],
-      uv: [part.textureOffsetU, part.textureOffsetV],
-      ...(part.mirror ? { mirror: true } : {}),
+      uv: cube.uv ?? [part.textureOffsetU, part.textureOffsetV],
+      ...(cube.grow?.some(value => value !== 0) ? { grow: cube.grow } : {}),
+      ...((cube.mirror ?? part.mirror) ? { mirror: true } : {}),
     })),
-    children: Object.fromEntries(children.map((child, index) => [String(index), convertPart(child, id, effectiveTexture)])),
+    children: Object.fromEntries(children.map((child, index) => [named && child.name ? child.name : String(index), convertPart(child, id, effectiveTexture, named)])),
   };
 }
 
-function readModel(id, parts) {
+function readModel(id, parts, named = false) {
   if (!parts || typeof parts !== 'object' || Array.isArray(parts)) {
     throw new Error(`Invalid legacy model: ${id}`);
   }
@@ -70,7 +77,7 @@ function readModel(id, parts) {
         root: {
           pose: { offset: [0, 0, 0], rotation: [0, 0, 0] },
           cubes: [],
-          children: Object.fromEntries(Object.entries(parts).map(([name, part]) => [name, convertPart(part, id, texture)])),
+          children: Object.fromEntries(Object.entries(parts).map(([name, part]) => [name, convertPart(part, id, texture, named)])),
         },
       },
     },
@@ -104,13 +111,37 @@ export function convertLegacy(entityDump, blockEntityDump) {
   return { records, skipped, mixedTextureSizes };
 }
 
+export function addLegacyRuntimeLayers(records, runtime) {
+  const byId = new Map(records.map(record => [record.id, record]));
+  for (const [id, layers] of Object.entries(runtime)) {
+    for (const [name, parts] of Object.entries(layers)) {
+      const converted = readModel(id, parts, name !== 'main').model;
+      if (!converted) continue;
+      const layer = converted.layers.main;
+      let record = byId.get(id);
+      if (!record) { record = { id, layers: {} }; records.push(record); byId.set(id, record); }
+      if (!record.layers[name]) record.layers[name] = layer;
+      else for (const [bone, part] of Object.entries(layer.root.children)) {
+        if (record.layers[name].root.children[bone]) continue;
+        if (!sameTexture(record.layers[name].texture, layer.texture) && !part.texture) part.texture = layer.texture;
+        record.layers[name].root.children[bone] = part;
+      }
+    }
+  }
+}
+
 async function main(args) {
   const inputs = [];
   let output;
+  const options = { cache: resolve(DEFAULT_CACHE), offline: false };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--output' && !output && args[index + 1] && !args[index + 1].startsWith('--')) {
       output = args[++index];
+    } else if (argument === '--offline') {
+      options.offline = true;
+    } else if (['--cache', '--legacy-cache'].includes(argument) && args[index + 1] && !args[index + 1].startsWith('--')) {
+      options[argument === '--cache' ? 'cache' : 'legacyCache'] = resolve(args[++index]);
     } else if (!argument.startsWith('--')) {
       inputs.push(argument);
     } else {
@@ -118,20 +149,43 @@ async function main(args) {
     }
   }
   if (inputs.length !== 2 || !output) {
-    throw new Error('Usage: node tools/convert-legacy.js <entityModels.json> <blockEntityModels.json> --output DIR');
+    throw new Error('Usage: node tools/convert-legacy.js <entityModels.json> <blockEntityModels.json> --output DIR [--cache DIR] [--legacy-cache DIR] [--offline]');
   }
   if (await exists(output)) throw new Error(`Output directory already exists: ${output}`);
   const dumps = await Promise.all(inputs.map(async input => JSON.parse(await readFile(input, 'utf8'))));
   const { records, skipped, mixedTextureSizes } = convertLegacy(...dumps);
-  const cache = resolve(DEFAULT_CACHE);
-  const { entry, metadata, directory } = await loadVersion('1.16.5', cache);
-  const clientJar = await downloadClient(metadata, directory);
-  const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache });
+  const { cache, offline } = options;
+  const { entry, metadata, directory } = await loadVersion('1.16.5', cache, offline);
+  const clientJar = await downloadClient(metadata, directory, offline);
+  const runtime = await extractLegacyData(options);
+  addLegacyRuntimeLayers(records, runtime.models);
+  const blocks = await addLegacyBlockLayers(records, await listBlockIds(clientJar));
+  const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache, offline });
+  applyLegacyPasses(records);
+  const byId = new Map(records.map(record => [record.id, record]));
+  for (const entry of Object.values(blocks)) for (const part of entry.parts) {
+    if (part.textureLocation === byId.get(part.model).layers[part.layer ?? 'main'].textureLocation) delete part.textureLocation;
+  }
+  const missing = new Map(textures.report.missing.map(entry => [`${entry.id}#${entry.layer}`, entry]));
+  textures.report.missing = records.flatMap(record => Object.entries(record.layers).filter(([, layer]) => !layer.textureLocation)
+    .map(([layer]) => ['inner_armor', 'outer_armor', 'armor', 'decor'].includes(layer)
+      ? { id: record.id, layer, reason: 'Requires a caller-selected equipment texture' }
+      : missing.get(`${record.id}#${layer}`) ?? { id: record.id, layer, reason: 'Requires a caller-selected texture' }))
+    .sort((a, b) => a.id.localeCompare(b.id, 'en') || a.layer.localeCompare(b.layer, 'en'));
+  textures.withTexture = records.filter(record => Object.values(record.layers).some(layer => layer.textureLocation)).length;
+  textures.withoutTexture = records.length - textures.withTexture;
   await applyTransforms(records, entry.id);
-  await writeDataset(output, entry, records);
+  placeLegacyBanners(records);
+  const passTextures = records.filter(record => record.passes).map(record => ({ id: record.id,
+    layers: Object.fromEntries(record.passes.filter(pass => pass.textureLocation).map((pass, index) => [index, pass])) }));
+  await validateTextures([...records, ...blockTextureRecords(blocks), ...passTextures], entry.id, new Map(), { cache, offline });
+  const { animations, findings } = buildAnimations(decimateProceduralAnimations([...runtime.animations, ...legacyBlockAnimations(records)]), records);
+  if (findings.length) throw new Error(findings.join('\n'));
+  await writeDataset(output, entry, records, { blocks, animations });
   await writeFile(join(output, '_textures.report.json'), stableStringify(textures.report));
-  console.log(`Wrote ${records.length} models to ${output}; skipped ${skipped} empty models; preserved part texture sizes for ${mixedTextureSizes} models with mixed sizes.`);
+  console.log(`Wrote ${records.length} models to ${output}; ${skipped} legacy dump entries were empty before runtime additions; preserved part texture sizes for ${mixedTextureSizes} models with mixed sizes.`);
   console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
+  console.log(`${Object.keys(blocks).length} block entries; ${animations.length} animation files.`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
