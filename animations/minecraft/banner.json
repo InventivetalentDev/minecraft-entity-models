@@ -1,0 +1,1 @@
+{"animations":{"sway":{"bones":{"flag":{"position":[{"interpolation":"linear","time":0,"value":[0,-32,0]}],"rotation":[{"interpolation":"linear","time":0,"value":[-0.007853983,0,0]},{"interpolation":"linear","time":2.5,"value":[-0.07068584,0,0]},{"interpolation":"linear","time":5,"value":[-0.007853983,0,0]}]}},"length":5,"loop":true}},"id":"minecraft:banner"}
