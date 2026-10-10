@@ -10,16 +10,15 @@ import { applyPasses } from './passes.js';
 import { buildAnimations } from './animations.js';
 import { extractionAdapter } from './extraction-adapters.js';
 import { addClassicBlockModels } from './classic-models.js';
-import { proceduralAnimations, PROCEDURAL_VERSIONS } from './procedural-animations.js';
+import { proceduralAnimations } from './procedural-animations.js';
 import { decimateProceduralAnimations } from './procedural-decimation.js';
-import { DEFAULT_CACHE, NAMED_CLIENT_CLASSES, clientNeedsRemapping, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
-import { downloadLibraries, javaTool } from './runtime.js';
+import { DEFAULT_CACHE, clientNeedsRemapping, download, downloadClient, exists, loadVersion, sha1 } from './download.js';
+import { downloadLibraries, javaTool, listJar } from './runtime.js';
 
 const ART_VERSION = '2.0.18';
 const ART_SHA1 = '59bd788e0a1bd339256711dee40015a62cdf3cd2';
 const ART_URL = `https://maven.neoforged.net/releases/net/neoforged/AutoRenamingTool/${ART_VERSION}/AutoRenamingTool-${ART_VERSION}-all.jar`;
 const JAVA = javaTool('java');
-const JAR = javaTool('jar');
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -63,16 +62,15 @@ async function main() {
   const client = metadata.downloads.client;
   const mappings = metadata.downloads.client_mappings;
   const clientJar = await downloadClient(metadata, directory, values.offline);
-  const remap = clientNeedsRemapping(metadata, mappings ? [] :
-    (await run(JAR, ['tf', clientJar, ...NAMED_CLIENT_CLASSES])).trim().split(/\r?\n/));
+  const clientEntries = mappings ? null : await listJar(clientJar);
+  const remap = clientNeedsRemapping(metadata, clientEntries ?? []);
   const mappingFile = mappings && path.join(directory, `mappings-${mappings.sha1}.txt`);
   const remapper = path.join(cache, `AutoRenamingTool-${ART_VERSION}-all.jar`);
   if (remap) {
     await download(`https://assets.mcasset.cloud/${encodeURIComponent(entry.id)}/mappings/client.txt`, mappingFile, mappings.sha1, values.offline);
     await download(ART_URL, remapper, ART_SHA1, values.offline);
   }
-  const libraries = await downloadLibraries(metadata.libraries,
-    artifact => path.join(cache, 'libraries', `${artifact.sha1}.jar`), values.offline);
+  const libraries = await downloadLibraries(metadata.libraries, cache, values.offline);
   const remapKey = remap && sha1(`${client.sha1}:${mappings.sha1}:${ART_SHA1}`);
   const remapped = remap ? path.join(directory, `mapped-${remapKey}.jar`) : clientJar;
   const checksum = `${remapped}.sha1`;
@@ -92,6 +90,7 @@ async function main() {
     }
   }
   console.log(`Extracting Minecraft ${entry.id}...`);
+  const entries = clientEntries ?? await listJar(remapped);
   const extracted = path.join(directory, `models-${process.pid}.json`);
   const proceduralInputs = path.join(directory, `animation-inputs-${process.pid}.json`);
   try {
@@ -102,22 +101,21 @@ async function main() {
     await applyTransforms(records, entry.id);
     await addClassicBlockModels(records, entry.id);
     console.log(`Resolving Minecraft ${entry.id} textures...`);
-    const textures = await addTextures(records, { jar: remapped, modelLayers, version: entry.id, cache, offline: values.offline });
+    const textures = await addTextures(records, { jar: remapped, entries, modelLayers, version: entry.id, cache, offline: values.offline });
     await applyPasses(records, entry.id, { cache, offline: values.offline, textureEntries: textures.textureEntries });
-    const blocks = expandBlocks(await loadBlockFamilies(), records, await listBlockIds(remapped));
+    const blocks = expandBlocks(await loadBlockFamilies(), records, listBlockIds(entries));
     await validateTextures(blockTextureRecords(blocks), entry.id, new Map(), { cache, offline: values.offline });
     await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...libraries].join(path.delimiter),
       fileURLToPath(new URL('./Animations.java', import.meta.url)), extracted], { cwd: directory });
     const native = JSON.parse(await readFile(extracted, 'utf8'));
     const dump = adapter.nativeAnimations(native);
     const procedural = proceduralAnimations(entry.id, records);
-    if (!PROCEDURAL_VERSIONS.includes(entry.id)) {
+    if (!adapter.procedural) {
       console.warn(`Minecraft ${entry.id} has no reviewed procedural animation profiles; only native definitions are extracted.`);
     }
     if (procedural.length) {
       console.log(`Sampling Minecraft ${entry.id} procedural animations...`);
-      const samplerLibraries = [...libraries, ...await downloadLibraries(adapter.samplerLibraries,
-        artifact => path.join(cache, 'libraries', `${artifact.sha1}.jar`), values.offline)];
+      const samplerLibraries = [...libraries, ...await downloadLibraries(adapter.samplerLibraries, cache, values.offline)];
       await writeFile(proceduralInputs, JSON.stringify(procedural));
       await run(JAVA, ['-Djava.awt.headless=true', '--class-path', [remapped, ...samplerLibraries].join(path.delimiter),
         fileURLToPath(new URL('./ProceduralAnimations.java', import.meta.url)), proceduralInputs, extracted], { cwd: directory });
@@ -128,8 +126,7 @@ async function main() {
     const count = await writeDataset(output, entry, records, { blocks, animations });
     await writeFile(path.join(output, '_textures.report.json'), stableStringify(textures.report));
     console.log(`${entry.id}: ${count - animations.length} models, ${animations.length} animation files → ${output}`);
-    const withTexture = records.filter(model => Object.values(model.layers).some(layer => layer.textureLocation)).length;
-    console.log(`${withTexture} models with a texture; ${records.length - withTexture} without.`);
+    console.log(`${textures.withTexture} models with a texture; ${textures.withoutTexture} without.`);
   } finally {
     await rm(extracted, { force: true });
     await rm(proceduralInputs, { force: true });

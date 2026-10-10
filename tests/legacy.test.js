@@ -138,6 +138,27 @@ test('adds animation hierarchies without changing legacy part names or geometry'
   assert.deepEqual(lectern.layers.main.root.children.cover.cubes, cubes);
 });
 
+test('adds a runtime child part only inside its parent unless the dump lists it at the root', () => {
+  const part = {
+    textureWidth: 16, textureHeight: 16, textureOffsetU: 0, textureOffsetV: 0,
+    pivotX: 0, pivotY: 0, pivotZ: 0, pitch: 0, yaw: 0, roll: 0, mirror: false,
+    cubes: [{ minX: 0, minY: 0, minZ: 0, maxX: 1, maxY: 1, maxZ: 1 }], children: [],
+  };
+  const jaw = { ...part, pivotY: 4, nested: true };
+  const runtime = { main: { head: { ...part, children: [jaw] }, jaw } };
+  const added = [];
+  addLegacyRuntimeLayers(added, { 'example:skull': runtime });
+  assert.deepEqual(Object.keys(added[0].layers.main.root.children), ['head']);
+  assert.deepEqual(added[0].layers.main.root.children.head.children['0'].pose.offset, [0, 4, 0]);
+  const listed = convertModel('example:skull', { head: part, jaw: part });
+  const partial = convertModel('example:skull', { head: part });
+  addLegacyRuntimeLayers([listed], { 'example:skull': runtime });
+  addLegacyRuntimeLayers([partial], { 'example:skull': runtime });
+  assert.deepEqual(Object.keys(listed.layers.main.root.children), ['head', 'jaw']);
+  assert.deepEqual(listed.layers.main.root.children.jaw.pose.offset, [0, 0, 0]);
+  assert.deepEqual(Object.keys(partial.layers.main.root.children), ['head']);
+});
+
 test('uses recovered per-cube UV, dilation and mirror for newly extracted parts', () => {
   const part = {
     textureWidth: 64, textureHeight: 32, textureOffsetU: 20, textureOffsetV: 25,

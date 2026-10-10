@@ -6,6 +6,7 @@ import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { DEFAULT_CACHE, downloadClient, exists, loadVersion } from './download.js';
 import { extractLegacyData } from './legacy-runtime.js';
+import { listJar } from './runtime.js';
 import { addLegacyBlockLayers, legacyBlockAnimations } from './legacy-blocks.js';
 import { applyLegacyPasses } from './legacy-passes.js';
 import { blockTextureRecords, expandBlocks, listBlockIds } from './blocks.js';
@@ -114,11 +115,14 @@ export function convertLegacy(entityDump, blockEntityDump) {
 export function addLegacyRuntimeLayers(records, runtime) {
   const byId = new Map(records.map(record => [record.id, record]));
   for (const [id, layers] of Object.entries(runtime)) {
-    for (const [name, parts] of Object.entries(layers)) {
+    for (const [name, runtimeParts] of Object.entries(layers)) {
+      let record = byId.get(id);
+      const present = record?.layers[name]?.root.children ?? {};
+      // The dumps repeat child parts at the layer root. A part they lack keeps only its place in the hierarchy.
+      const parts = Object.fromEntries(Object.entries(runtimeParts).filter(([bone, part]) => !part.nested || present[bone]));
       const converted = readModel(id, parts, name !== 'main').model;
       if (!converted) continue;
       const layer = converted.layers.main;
-      let record = byId.get(id);
       if (!record) { record = { id, layers: {} }; records.push(record); byId.set(id, record); }
       if (!record.layers[name]) record.layers[name] = layer;
       else for (const [bone, part] of Object.entries(layer.root.children)) {
@@ -165,7 +169,7 @@ async function main(args) {
   const clientJar = await downloadClient(metadata, directory, offline);
   const runtime = await extractLegacyData({ ...options, metadata, clientJar });
   addLegacyRuntimeLayers(records, runtime.models);
-  const blockIds = await listBlockIds(clientJar);
+  const blockIds = listBlockIds(await listJar(clientJar));
   const blockFamilies = await addLegacyBlockLayers(records, blockIds);
   const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache, offline, validate: false });
   await applyLegacyPasses(records);

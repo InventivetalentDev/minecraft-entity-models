@@ -53,6 +53,7 @@ public class LegacyModels {
         final Map<String, ModelPart> parts = new LinkedHashMap<>();
         final List<Object> models = new ArrayList<>();
         final java.util.Set<String> aliases = new java.util.HashSet<>();
+        final Map<String, Object> owners = new java.util.HashMap<>();
         boolean named;
     }
 
@@ -89,6 +90,8 @@ public class LegacyModels {
         Map<String, String> skullIds = Map.of("SKELETON", "skeleton_skull", "WITHER_SKELETON", "wither_skeleton_skull",
             "ZOMBIE", "zombie_head", "CREEPER", "creeper_head", "DRAGON", "dragon_skull", "PLAYER", "player_head");
         for (var entry : ((Map<?, ?>) skullModels.get(null)).entrySet()) addRenderer(models, "minecraft:" + skullIds.get(entry.getKey().toString()), entry.getValue());
+        // DragonHeadEntityModel inherits SkullEntityModel's cube but its render method draws only its own head.
+        models.get("minecraft:dragon_skull").get("main").parts.remove("skull");
         for (var model : models.values()) {
             Layer main = model.get("main");
             if (main.parts.values().stream().anyMatch(part -> hasChildren(part))) model.put("animated", namedLayer(main));
@@ -103,7 +106,10 @@ public class LegacyModels {
                 for (var part : layer.getValue().parts.entrySet()) {
                     if (layer.getValue().named && isChild(part.getValue(), layer.getValue().parts.values())) continue;
                     if (!layer.getValue().named && layer.getValue().aliases.contains(part.getKey()) && isChild(part.getValue(), layer.getValue().parts.values())) continue;
-                    parts.put(part.getKey(), geometry(part.getValue(), layer.getValue().named ? layer.getValue().parts : null));
+                    Map<String, Object> shape = (Map<String, Object>) geometry(part.getValue(), layer.getValue().named ? layer.getValue().parts : null);
+                    // An unnamed layer lists a child field at its root too; the flag lets the converter tell the copies apart.
+                    if (!layer.getValue().named && isChild(part.getValue(), layer.getValue().parts.values())) shape.put("nested", true);
+                    parts.put(part.getKey(), shape);
                 }
                 layers.put(layer.getKey(), parts);
                 types.put(layer.getKey(), layer.getValue().models.stream().map(value -> value.getClass().getName()).toList());
@@ -204,33 +210,50 @@ public class LegacyModels {
 
     private static void collect(Object value, Layer layer) throws Exception {
         if (value == null) return;
-        if (value instanceof Model) layer.models.add(value);
+        if (value instanceof Model) {
+            // A renderer can hold its active model in two fields; the last one found stays last.
+            layer.models.removeIf(model -> model == value);
+            layer.models.add(value);
+        }
         for (Field field : fields(value.getClass())) {
             if (Modifier.isStatic(field.getModifiers())) continue;
             if (field.getType() == ModelPart.class) {
                 ModelPart part = (ModelPart) read(field, value);
-                if (part != null) layer.parts.put(field.getName(), part);
+                if (part != null) put(layer, value, field.getName(), part);
             }
             else if (field.getType().isArray() && field.getType().getComponentType() == ModelPart.class) {
                 Object array = read(field, value);
                 if (array == null) continue;
                 for (int index = 0; index < Array.getLength(array); index++) {
                     String name = field.getName() + "_" + index;
-                    layer.parts.put(name, (ModelPart) Array.get(array, index));
-                    layer.aliases.add(name);
+                    layer.aliases.add(put(layer, value, name, (ModelPart) Array.get(array, index)));
                 }
             } else if (Iterable.class.isAssignableFrom(field.getType()) && read(field, value) instanceof Iterable<?> values) {
                 int index = 0;
                 for (Object item : values) {
                     if (item instanceof ModelPart part && !layer.parts.containsValue(part)) {
                         String name = field.getName() + "_" + index;
-                        layer.parts.put(name, part);
-                        layer.aliases.add(name);
+                        layer.aliases.add(put(layer, value, name, part));
                     }
                     index++;
                 }
             } else if (Model.class.isAssignableFrom(field.getType())) collect(read(field, value), layer);
         }
+    }
+
+    /**
+     * Models of one renderer can reuse a field name. A second instance of the same model class replaces the
+     * first, as the renderer draws the later one; a part of another class takes that class as a prefix.
+     */
+    private static String put(Layer layer, Object owner, String name, ModelPart part) {
+        Object previous = layer.owners.get(name);
+        if (previous != null && previous != owner && previous.getClass() != owner.getClass()) {
+            name = owner.getClass().getSimpleName() + "_" + name;
+            if (layer.parts.containsKey(name)) throw new IllegalArgumentException("Duplicate part name: " + name);
+        }
+        layer.parts.put(name, part);
+        layer.owners.put(name, owner);
+        return name;
     }
 
     private static boolean hasChildren(ModelPart part) {

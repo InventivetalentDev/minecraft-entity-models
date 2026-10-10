@@ -3,6 +3,8 @@ import { clip, linearTransitions, minecraftSin as sin, minecraftCos as cos } fro
 
 const f = Math.fround;
 const PI = f(Math.PI);
+// ShulkerBoxBlockEntityRenderer multiplies degrees by this float constant.
+const DEGREES = f(0.017453292);
 
 function select(source, names) {
   const layer = structuredClone(source);
@@ -21,8 +23,11 @@ export async function addLegacyBlockLayers(records, blockIds) {
     models.set(id, model);
     return model;
   };
-  const chest = models.get('chest');
-  chest.layers.single = select(chest.layers.main, ['singleChestLid', 'singleChestBase', 'singleChestLatch']);
+  // One ChestBlockEntityRenderer serves all three blocks, so each main layer holds the single and double parts.
+  for (const id of ['chest', 'trapped_chest', 'ender_chest']) {
+    const chest = models.get(id);
+    chest.layers.single = select(chest.layers.main, ['singleChestLid', 'singleChestBase', 'singleChestLatch']);
+  }
   for (const side of ['left', 'right']) add(`double_chest_${side}`, 'chest',
     ['Lid', 'Base', 'Latch'].map(part => `doubleChest${side[0].toUpperCase() + side.slice(1)}${part}`));
   add('bed_head', 'bed', ['field_20813', 'legs_1', 'legs_3']);
@@ -77,7 +82,7 @@ export function legacyBlockAnimations(records) {
   }
   for (const layer of ['main', 'shell']) add('shulker_box', layer,
     Object.fromEntries(Object.entries(linearTransitions(open => ({ topShell: {
-      position: [0, -f(f(open) * 8), 0], rotation: [0, f(f(f(270 * f(open)) * PI) / 180), 0],
+      position: [0, -f(f(open) * 8), 0], rotation: [0, f(f(270 * f(open)) * DEGREES), 0],
     } }), poses)).map(([name, value]) => [layer === 'main' ? name : `${name}_${layer}`, value])));
   for (const [direction, axis, sign] of [['north', 0, -1], ['south', 0, 1], ['east', 2, -1], ['west', 2, 1]]) {
     add('bell', 'main', { [`ring_${direction}`]: poses(2.5, false, time => {

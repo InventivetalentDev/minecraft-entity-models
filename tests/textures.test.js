@@ -43,6 +43,16 @@ test('texture paths use moved and baby assets only when the jar contains them', 
   assert.equal(versionTexture('minecraft:textures/entity/spider_eyes.png', false, new Set([eyes])), eyes);
 });
 
+test('explicit overrides take the moved and baby assets of a later release', async () => {
+  const records = ['cat', 'cat_baby'].map(model);
+  // Without a jar no texture entries are known, so the overrides stay as written.
+  await addTextures(records, { validate: false });
+  assert.equal(records[1].layers.main.textureLocation, 'minecraft:textures/entity/cat/black.png');
+  const entries = new Set(['minecraft:textures/entity/cat/cat_black.png', 'minecraft:textures/entity/cat/cat_black_baby.png']);
+  assert.equal(versionTexture(records[0].layers.main.textureLocation, false, entries), 'minecraft:textures/entity/cat/cat_black.png');
+  assert.equal(versionTexture(records[1].layers.main.textureLocation, true, entries), 'minecraft:textures/entity/cat/cat_black_baby.png');
+});
+
 test('baby models retain suffixes when matching stems and inheriting textures', async () => {
   const records = ['happy_ghast_ropes', 'happy_ghast_baby_ropes', 'villager_no_hat', 'villager_baby_no_hat',
     'wolf_armor', 'wolf_baby_armor', 'wolf_babylon'].map(model);

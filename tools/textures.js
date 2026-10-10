@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { stableStringify } from './lib.js';
 import { versionTexture } from './texture-paths.js';
 import { adultModelId, isBabyModel } from './model-ids.js';
-import { javaTool } from './runtime.js';
+import { javaTool, listJar } from './runtime.js';
 
 const key = (id, layer) => `${id}#${layer}`;
 
@@ -172,11 +172,11 @@ async function equipment(jar, entries, records, sources) {
   }
 }
 
-export async function extractTextures({ jar, records, modelLayers }) {
+export async function extractTextures({ jar, records, modelLayers, entries: listed }) {
   let result = { report: { pairings: [], unpaired: [] }, sources: new Map() };
   let entries = [];
   if (modelLayers) {
-    entries = (await run(javaTool('jar'), ['tf', jar])).trim().split(/\r?\n/);
+    entries = listed ?? await listJar(jar);
     const classes = entries.filter(entry => /^net\/minecraft\/client\/renderer\/(?:entity|blockentity)\/.*\.class$/.test(entry))
       .map(entry => entry.slice(0, -6).replaceAll('/', '.')).sort();
     const dumps = [];
@@ -327,12 +327,13 @@ export async function validateTextures(records, version, sources, { cache = '.ca
   }
 }
 
-export async function addTextures(records, { jar, modelLayers, version, cache, offline, validate = true } = {}) {
+export async function addTextures(records, { jar, entries, modelLayers, version, cache, offline, validate = true } = {}) {
   for (const model of records) for (const value of Object.values(model.layers)) delete value.textureLocation;
-  const { report, sources, missing, textureEntries } = jar ? await extractTextures({ jar, records, modelLayers })
+  const { report, sources, missing, textureEntries } = jar ? await extractTextures({ jar, entries, records, modelLayers })
     : { report: { pairings: [], unpaired: [] }, sources: new Map(), missing: applyStemTextures([], records) };
   await applyOverrides(records, { sources });
   inheritBabyTextures(records, sources);
+  // Overrides name the paths of the release they were reviewed on, so they take the moved and baby assets too.
   for (const model of records) for (const [layer, value] of Object.entries(model.layers)) {
     if (value.textureLocation) value.textureLocation = versionTexture(value.textureLocation,
       isBabyModel(model.id) || layer === 'baby', textureEntries);

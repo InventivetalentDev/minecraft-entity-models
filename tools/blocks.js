@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { promisify } from 'node:util';
-import { javaTool } from './runtime.js';
 
 const ID = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
 const TEXTURE = /^[a-z0-9_.-]+:textures\/[a-z0-9_./-]+\.png$/;
@@ -133,8 +130,10 @@ export async function loadBlockFamilies() {
   return JSON.parse(await readFile(new URL('./block-families.json', import.meta.url), 'utf8'));
 }
 
-// Block IDs of a version, taken from the blockstate files in its client jar.
-export async function listBlockIds(jar) {
-  const { stdout } = await promisify(execFile)(javaTool('jar'), ['tf', jar], { maxBuffer: 64 * 1024 * 1024 });
-  return new Set([...stdout.matchAll(/^assets\/minecraft\/blockstates\/([a-z0-9_]+)\.json$/gm)].map(match => `minecraft:${match[1]}`));
+// Block IDs of a version, taken from the blockstate files among its client jar entries.
+export function listBlockIds(entries) {
+  return new Set(entries.flatMap(entry => {
+    const match = /^assets\/minecraft\/blockstates\/([a-z0-9_]+)\.json$/.exec(entry);
+    return match ? [`minecraft:${match[1]}`] : [];
+  }));
 }

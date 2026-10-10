@@ -1,6 +1,7 @@
 import { clip, countdown, remapClips, steppedClip, squidCycle } from './procedural-sampling.js';
 import { classicBlockAnimations } from './procedural-classic-blocks.js';
 import { entityAnimations } from './procedural-entities.js';
+import { extractionAdapter } from './extraction-adapters.js';
 
 const MODEL = 'net.minecraft.client.model.';
 const ENTITY = 'net.minecraft.world.entity.';
@@ -20,7 +21,7 @@ const stationary = { getFallFlyingTicks: 0, isVisuallySwimming: false, isUsingIt
 // These signatures and getter inputs follow the mapped 1.17.1 and 1.20.1 model methods.
 // Entity fixtures describe a preview state; they do not advance gameplay or select equipment.
 export function classicAnimations(version, records) {
-  if (!['1.17.1', '1.20.1'].includes(version)) return [];
+  if (extractionAdapter(version).procedural !== 'classic') return [];
   const layers = new Map(records.map(record => [record.id, record.layers]));
   const requests = classicBlockAnimations([...layers.keys()]);
   const ground = version === '1.17.1' ? 'isOnGround' : 'onGround';

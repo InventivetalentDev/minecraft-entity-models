@@ -63,8 +63,7 @@ export async function prepareLegacyRuntime({ cache, offline = false, legacyCache
   const versionDirectory = path.join(cache, '1.16.5');
   metadata ??= (await loadVersion('1.16.5', cache, offline)).metadata;
   clientJar ??= await downloadClient(metadata, versionDirectory, offline);
-  const libraries = await downloadLibraries(metadata.libraries,
-    artifact => path.join(cache, 'libraries', `${artifact.sha1}.jar`), offline);
+  const libraries = await downloadLibraries(metadata.libraries, cache, offline);
   for (const [name, url, checksum] of TOOLS) await download(url, path.join(legacyCache, name), checksum, offline);
   const remapKey = sha1(JSON.stringify({ client: metadata.downloads.client.sha1,
     tools: TOOLS.map(([, , checksum]) => checksum), libraries: libraries.map(file => path.basename(file)), fixPackageAccess: true }));

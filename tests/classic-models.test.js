@@ -56,9 +56,10 @@ test('classic block models preserve registered geometry and expose renderer visi
 });
 
 test('legacy block indexes use textures assigned after their geometry aliases exist', async () => {
+  const chestParts = ['singleChest', 'doubleChestLeft', 'doubleChestRight'].flatMap(prefix =>
+    ['Lid', 'Base', 'Latch'].map(part => `${prefix}${part}`));
   const records = [
-    model('chest', ['singleChest', 'doubleChestLeft', 'doubleChestRight'].flatMap(prefix =>
-      ['Lid', 'Base', 'Latch'].map(part => `${prefix}${part}`))),
+    model('chest', chestParts), model('trapped_chest', chestParts), model('ender_chest', chestParts),
     model('bed', ['field_20813', 'field_20814', 'legs_0', 'legs_1', 'legs_2', 'legs_3']),
     model('sign', ['field', 'foot']), model('banner', ['pillar', 'crossbar', 'banner']),
     model('conduit', ['field_20825']), model('shulker_box', ['bottomShell', 'topShell']),
@@ -69,6 +70,10 @@ test('legacy block indexes use textures assigned after their geometry aliases ex
   get('chest').layers.single.textureLocation = 'minecraft:textures/entity/chest/normal.png';
   get('shulker_box').layers.shell.textureLocation = 'minecraft:textures/entity/shulker/shulker.png';
   get('sign/standing/oak').layers.main.textureLocation = 'minecraft:textures/entity/signs/oak.png';
+  for (const id of ['chest', 'trapped_chest', 'ender_chest']) {
+    assert.deepEqual(Object.keys(get(id).layers.single.root.children), ['singleChestLid', 'singleChestBase', 'singleChestLatch']);
+    assert.equal(Object.keys(get(id).layers.main.root.children).length, 9);
+  }
   const blocks = expandBlocks(families, records, blockIds);
   assert.deepEqual(blocks['minecraft:shulker_box'].parts, [{ model: 'minecraft:shulker_box', layer: 'shell' }]);
   assert.deepEqual(blocks['minecraft:oak_sign'].parts, [{ model: 'minecraft:sign/standing/oak' }]);

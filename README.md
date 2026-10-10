@@ -170,7 +170,7 @@ Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11, an
 
 Extraction and conversion require a new output directory. Run tests with `node --test`.
 
-- 1.16.5: 132 model files, 84 animation files, 158 sampled clips, 98 block entries.
+- 1.16.5: 132 model files, 84 animation files, 162 sampled clips, 98 block entries.
 - 1.17.1: 145 model files, 87 animation files, 160 sampled clips, 98 block entries.
 - 1.20.1: 219 model files, 105 animation files, 225 clips (27 native and 198 sampled), 129 block entries.
 - 1.21.11: 289 model files, 178 animation files, 408 clips (74 native and 334 sampled). This includes 60 sampled clips in the 20 nested `boat/` and `chest_boat/` files; counting only top-level animation files gives 348 clips (74 native and 274 sampled).

@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { download } from './download.js';
 
 export const javaTool = name => process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', name) : name;
@@ -18,13 +20,19 @@ export function allowedLibrary(library) {
   return allowed;
 }
 
-export async function downloadLibraries(libraries, fileFor, offline = false) {
+// The entry names of a jar. One listing serves the class, blockstate and texture lookups of a run.
+export async function listJar(jar) {
+  const { stdout } = await promisify(execFile)(javaTool('jar'), ['tf', jar], { maxBuffer: 64 * 1024 * 1024 });
+  return stdout.trim().split(/\r?\n/);
+}
+
+export async function downloadLibraries(libraries, cache, offline = false) {
   const artifacts = [...new Map(libraries.filter(allowedLibrary)
     .map(library => library.downloads?.artifact).filter(Boolean).map(artifact => [artifact.sha1, artifact])).values()];
   const files = [];
   for (let index = 0; index < artifacts.length; index += 6) {
     const results = await Promise.allSettled(artifacts.slice(index, index + 6).map(async artifact => {
-      const file = fileFor(artifact);
+      const file = path.join(cache, 'libraries', `${artifact.sha1}.jar`);
       await download(artifact.url, file, artifact.sha1, offline);
       return file;
     }));

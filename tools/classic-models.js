@@ -1,9 +1,10 @@
 import { applyTransforms } from './transform.js';
+import { extractionAdapter } from './extraction-adapters.js';
 
 // Older renderers share model layers and choose visible parts at draw time. These
 // separate block models retain those choices without changing the registered layers.
 export async function addClassicBlockModels(records, version) {
-  if (!['1.17.1', '1.20.1'].includes(version)) return records;
+  if (!extractionAdapter(version).classicBlockModels) return records;
   const additions = [];
   const byId = new Map(records.map(model => [model.id, model]));
   function add(id, source, children) {
