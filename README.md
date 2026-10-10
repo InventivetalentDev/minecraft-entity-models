@@ -143,7 +143,7 @@ const entity = await scene.addEntity(model, { tints: { collar_color: 0xff0000 } 
 
 The clip's `animated` layer targets both `animated` and `animated#2`, keeping the collar's pose aligned with the body.
 
-Armor, outer clothing, and sheep wool have separate clips whose names end in the layer name, such as `walk_cycle_boots` and `eat_wool`. Play these alongside the corresponding main-layer clip. In 1.17.1 and 1.20.1, humanoid armor uses vanilla's body-to-armor pose copy and retains the main clip's length and loop setting; piglin armor uses `walk_sample_inner_armor` and `walk_sample_outer_armor`. Each clip carries its own `layer` and deltas from that layer's baked pose.
+Armor, outer clothing, and sheep wool have separate clips whose names end in the layer name, such as `walk_cycle_boots` and `eat_wool`. Play these alongside the corresponding main-layer clip. In 1.16.5, 1.17.1, and 1.20.1, humanoid armor uses vanilla's body-to-armor pose copy and retains the main clip's length and loop setting; piglin armor uses `walk_sample_inner_armor` and `walk_sample_outer_armor`. Each clip carries its own `layer` and deltas from that layer's baked pose.
 
 Times assume 20 game ticks per second. Profiles sample poses at 120–480 samples per second to form a dense linear reference. `tools/procedural-decimation.js` reduces each bone channel using linear and Catmull-Rom interpolation, with a maximum error of 0.01 per axis against that reference (radians for rotation, model units for position, and scale units for scale). The bound includes times between source samples. The first and last frame's times and values, and every explicit `pre` discontinuity, stay exact.
 
@@ -159,7 +159,7 @@ Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11, an
    ```sh
    node tools/extract.js --version 1.21.11 --output out/1.21.11
    ```
-2. Convert the legacy [entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/entityModels.json) and [block-entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/blockEntityModels.json), supplementing missing geometry, render layers, and procedural poses from the 1.16.5 runtime. Existing part names remain intact; unnamed children use numeric keys. The runtime uses pinned Yarn 1.16.5 build 6 mappings. `--cache`, `--legacy-cache`, and `--offline` configure its downloads:
+2. Convert the legacy [entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/entityModels.json) and [block-entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/blockEntityModels.json), supplementing missing geometry, render layers, and procedural poses from the 1.16.5 runtime. Existing part names remain intact; unnamed children use numeric keys. The runtime uses pinned Yarn 1.16.5 build 6 mappings. `--cache` holds shared client downloads, libraries, and the checksum-verified mapped jar; `--legacy-cache` selects the Yarn and remapper download directory. `--offline` uses cached downloads:
    ```sh
    node tools/convert-legacy.js entityModels.json blockEntityModels.json --output out/1.16.5
    ```
@@ -170,7 +170,7 @@ Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11, an
 
 Extraction and conversion require a new output directory. Run tests with `node --test`.
 
-- 1.16.5: 132 model files, 85 animation files, 161 sampled clips, 98 block entries.
+- 1.16.5: 132 model files, 84 animation files, 158 sampled clips, 98 block entries.
 - 1.17.1: 145 model files, 87 animation files, 160 sampled clips, 98 block entries.
 - 1.20.1: 219 model files, 105 animation files, 225 clips (27 native and 198 sampled), 129 block entries.
 - 1.21.11: 289 model files, 178 animation files, 408 clips (74 native and 334 sampled). This includes 60 sampled clips in the 20 nested `boat/` and `chest_boat/` files; counting only top-level animation files gives 348 clips (74 native and 274 sampled).

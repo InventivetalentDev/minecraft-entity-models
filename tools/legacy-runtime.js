@@ -1,11 +1,10 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { download } from './download.js';
+import { download, downloadClient, exists, loadVersion, sha1 } from './download.js';
 import { legacyAnimationRequests } from './legacy-animations.js';
 import { downloadLibraries, javaTool } from './runtime.js';
 
@@ -56,27 +55,42 @@ export async function extractLegacyData(options) {
 }
 
 // Yarn's field names preserve the bone names in the original 1.16.5 dictionaries.
-export async function prepareLegacyRuntime({ cache, offline = false, legacyCache = path.join(cache, 'yarn-1.16.5') }) {
-  const hash = 'fba9f7833e858a1257d810d21a3a9e3c967f9077';
-  const metadata = JSON.parse(await download(`https://piston-meta.mojang.com/v1/packages/${hash}/1.16.5.json`,
-    path.join(legacyCache, 'version.json'), hash, offline));
-  const client = path.join(legacyCache, 'client.jar');
-  await download(metadata.downloads.client.url, client, metadata.downloads.client.sha1, offline);
+export async function prepareLegacyRuntime({ cache, offline = false, legacyCache = path.join(cache, 'yarn-1.16.5'),
+  metadata, clientJar }) {
+  cache = path.resolve(cache);
+  legacyCache = path.resolve(legacyCache);
+  if (clientJar) clientJar = path.resolve(clientJar);
+  const versionDirectory = path.join(cache, '1.16.5');
+  metadata ??= (await loadVersion('1.16.5', cache, offline)).metadata;
+  clientJar ??= await downloadClient(metadata, versionDirectory, offline);
   const libraries = await downloadLibraries(metadata.libraries,
-    artifact => path.join(legacyCache, 'libraries', artifact.path), offline);
+    artifact => path.join(cache, 'libraries', `${artifact.sha1}.jar`), offline);
   for (const [name, url, checksum] of TOOLS) await download(url, path.join(legacyCache, name), checksum, offline);
-  const directory = await mkdtemp(path.join(tmpdir(), 'minecraft-legacy-runtime-'));
+  const remapKey = sha1(JSON.stringify({ client: metadata.downloads.client.sha1,
+    tools: TOOLS.map(([, , checksum]) => checksum), libraries: libraries.map(file => path.basename(file)), fixPackageAccess: true }));
+  const named = path.join(versionDirectory, `yarn-mapped-${remapKey}.jar`);
+  const checksum = `${named}.sha1`;
+  const cached = await exists(named) && await exists(checksum);
+  if (cached && sha1(await readFile(named)) !== (await readFile(checksum, 'utf8')).trim()) {
+    throw new Error(`SHA-1 mismatch: ${named}`);
+  }
+  await mkdir(versionDirectory, { recursive: true });
+  const directory = await mkdtemp(path.join(versionDirectory, 'runtime-'));
   try {
-    let input = client;
-    for (const [name, from, to] of [['intermediary', 'official', 'intermediary'], ['yarn', 'intermediary', 'named']]) {
-      const output = path.join(directory, `${to}.jar`);
-      await run(javaTool('jar'), ['xf', path.join(legacyCache, `${name}.jar`), 'mappings/mappings.tiny'], { cwd: directory });
-      await run(javaTool('java'), ['-jar', path.join(legacyCache, 'remapper.jar'), input, output,
-        path.join(directory, 'mappings/mappings.tiny'), from, to, ...libraries, '--fixPackageAccess'],
-      { cwd: directory, maxBuffer: 8 * 1024 * 1024 });
-      input = output;
+    if (!cached) {
+      let input = clientJar;
+      for (const [name, from, to] of [['intermediary', 'official', 'intermediary'], ['yarn', 'intermediary', 'named']]) {
+        const output = path.join(directory, `${to}.jar`);
+        await run(javaTool('jar'), ['xf', path.join(legacyCache, `${name}.jar`), 'mappings/mappings.tiny'], { cwd: directory });
+        await run(javaTool('java'), ['-jar', path.join(legacyCache, 'remapper.jar'), input, output,
+          path.join(directory, 'mappings/mappings.tiny'), from, to, ...libraries, '--fixPackageAccess'],
+        { cwd: directory, maxBuffer: 8 * 1024 * 1024 });
+        input = output;
+      }
+      await rename(input, named);
+      await writeFile(checksum, sha1(await readFile(named)) + '\n');
     }
-    return { classpath: [input, ...libraries].join(path.delimiter), directory,
+    return { classpath: [named, ...libraries].join(path.delimiter), directory,
       dispose: () => rm(directory, { recursive: true, force: true }) };
   } catch (error) {
     await rm(directory, { recursive: true, force: true });

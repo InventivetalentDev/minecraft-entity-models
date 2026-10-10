@@ -42,16 +42,8 @@ export async function addClassicBlockModels(records, version) {
     flag.root.children.flag.pose.offset[1] = -32;
     model.layers.flag = flag;
   }
-  const shulker = add('shulker_box', byId.get('minecraft:shulker'), ['base', 'lid']);
-  if (shulker) delete shulker.layers.main.render;
+  add('shulker_box', byId.get('minecraft:shulker'), ['base', 'lid']);
   await applyTransforms(additions, version);
-  for (const model of additions) {
-    // BannerRenderer uses different translations from the later split models.
-    if (model.id === 'minecraft:standing_banner') model.transform = structuredClone(banner.transform);
-    if (model.id === 'minecraft:wall_banner') model.transform = [
-      { translate: [8, Math.fround(-1 / 6) * 16, 8] }, { translate: [0, -5, -7] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
-    ];
-  }
   records.push(...additions);
   return records;
 }

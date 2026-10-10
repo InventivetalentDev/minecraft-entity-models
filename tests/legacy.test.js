@@ -3,6 +3,27 @@ import test from 'node:test';
 import { addLegacyRuntimeLayers, convertLegacy, convertModel } from '../tools/convert-legacy.js';
 import { validateModel } from '../tools/lib.js';
 import { applyLegacyPasses } from '../tools/legacy-passes.js';
+import { legacyAnimationRequests } from '../tools/legacy-animations.js';
+
+test('legacy armor copies its body controller and lectern books remain static', () => {
+  const ids = ['piglin', 'piglin_brute', 'zombified_piglin', 'zombie', 'zombie_villager', 'skeleton', 'player', 'player_slim'];
+  const inventory = new Proxy({}, { get: (_, id) => ({ main: ['BodyModel'],
+    ...(ids.some(name => id === `minecraft:${name}`) ? { inner_armor: ['ArmorModel'], outer_armor: ['ArmorModel'] } : {}),
+  }) });
+  const requests = legacyAnimationRequests(inventory);
+  assert.ok(!requests.some(request => request.model === 'minecraft:lectern'));
+  assert.ok(requests.some(request => request.model === 'minecraft:enchanting_table' && request.clips.idle));
+  for (const id of ids) {
+    const main = requests.find(request => request.model === `minecraft:${id}` && !request.layer);
+    for (const layer of ['inner_armor', 'outer_armor']) {
+      const armor = requests.find(request => request.model === `minecraft:${id}` && request.layer === layer);
+      assert.deepEqual(armor.copyPose, { sourceLayer: 'main',
+        targetClass: 'net.minecraft.client.render.entity.model.BipedEntityModel', method: 'setAttributes' });
+      assert.equal(armor.entityClass, main.entityClass);
+      assert.deepEqual(armor.clips, Object.fromEntries(Object.entries(main.clips).map(([name, clip]) => [`${name}_${layer}`, clip])));
+    }
+  }
+});
 
 test('converts a legacy trident with a mirrored child to one main layer', () => {
   const part = {
@@ -110,6 +131,11 @@ test('adds animation hierarchies without changing legacy part names or geometry'
   assert.deepEqual(Object.keys(original.layers.main.root.children.body.children), ['0']);
   assert.deepEqual(Object.keys(original.layers.animated.root.children.body.children), ['tail']);
   assert.equal(original.passes, undefined);
+  const lectern = convertModel('minecraft:lectern', { cover: part });
+  const cubes = structuredClone(lectern.layers.main.root.children.cover.cubes);
+  addLegacyRuntimeLayers([lectern], { 'minecraft:lectern': { main: { cover: { ...part, yaw: 1.5 } } } });
+  assert.deepEqual(lectern.layers.main.root.children.cover.pose.rotation, [0, 1.5, 0]);
+  assert.deepEqual(lectern.layers.main.root.children.cover.cubes, cubes);
 });
 
 test('uses recovered per-cube UV, dilation and mirror for newly extracted parts', () => {
@@ -148,7 +174,7 @@ test('rebases runtime part texture inheritance onto the preserved legacy layer s
   assert.doesNotThrow(() => validateModel({ ...record, transform: [] }));
 });
 
-test('preserves runtime models with non-main layers through legacy pass assignment', () => {
+test('preserves runtime models with non-main layers through legacy pass assignment', async () => {
   const part = {
     textureWidth: 16, textureHeight: 16, textureOffsetU: 0, textureOffsetV: 0,
     pivotX: 0, pivotY: 0, pivotZ: 0, pitch: 0, yaw: 0, roll: 0, mirror: false,
@@ -164,7 +190,7 @@ test('preserves runtime models with non-main layers through legacy pass assignme
     assert.equal(records.length, 1);
     assert.deepEqual(Object.keys(records[0].layers), [layer]);
     const geometry = structuredClone(records[0].layers[layer].root);
-    applyLegacyPasses(records);
+    await applyLegacyPasses(records);
     assert.deepEqual(Object.keys(records[0].layers), [layer]);
     assert.deepEqual(records[0].layers[layer].root, geometry);
     assert.doesNotThrow(() => validateModel({ ...records[0], transform: [] }));
@@ -174,5 +200,5 @@ test('preserves runtime models with non-main layers through legacy pass assignme
     if (id === 'chest') assert.equal(records[0].layers.single.render, 'cutout_cull');
   }
   const mainOnly = convertModel('minecraft:sheep', { body: part });
-  assert.throws(() => applyLegacyPasses([mainOnly]), /minecraft:sheep: missing feature layer fur/);
+  await assert.rejects(applyLegacyPasses([mainOnly]), /minecraft:sheep: missing feature layer fur/);
 });

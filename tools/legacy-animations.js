@@ -74,7 +74,7 @@ export function legacyAnimationRequests(inventory) {
   for (const id of ['guardian', 'elder_guardian']) add(id, remapClips(guardian.clips, ([state]) => [{
     getTailAngle: state.spikesAnimation, getSpikesExtension: state.tailAnimation,
   }, 0, 0, state.ageInTicks, 0, 0]), { layer: 'animated' });
-  for (const id of ['enchanting_table', 'lectern']) add(id, {
+  add('enchanting_table', {
     ...linearTransitions((open, time) => [time * 20, 0.1, 0.9, open]),
     idle: clip(5 * Math.PI, true, time => [(time + 0.5) * 20, 0.1, 0.9, 1]),
   }, { method: 'setPageAngles' });
@@ -82,7 +82,10 @@ export function legacyAnimationRequests(inventory) {
 
   for (const request of [...requests]) for (const layer of Object.keys(inventory[request.model])) {
     if (request.layer || ['main', 'animated'].includes(layer) || !inventory[request.model][layer].length) continue;
-    requests.push({ ...request, layer, class: undefined, clips: Object.fromEntries(Object.entries(request.clips)
+    requests.push({ ...request, layer,
+      ...(['inner_armor', 'outer_armor'].includes(layer) ? { copyPose: { sourceLayer: 'main',
+        targetClass: 'net.minecraft.client.render.entity.model.BipedEntityModel', method: 'setAttributes' } } : {}),
+      clips: Object.fromEntries(Object.entries(request.clips)
       .map(([name, animation]) => [`${name}_${layer}`, animation])) });
   }
   for (const request of requests) if (!request.layer && inventory[request.model].animated) request.layer = 'animated';

@@ -6,9 +6,9 @@ import { addTextures, validateTextures } from './textures.js';
 import { applyTransforms } from './transform.js';
 import { DEFAULT_CACHE, downloadClient, exists, loadVersion } from './download.js';
 import { extractLegacyData } from './legacy-runtime.js';
-import { addLegacyBlockLayers, legacyBlockAnimations, placeLegacyBanners } from './legacy-blocks.js';
+import { addLegacyBlockLayers, legacyBlockAnimations } from './legacy-blocks.js';
 import { applyLegacyPasses } from './legacy-passes.js';
-import { blockTextureRecords, listBlockIds } from './blocks.js';
+import { blockTextureRecords, expandBlocks, listBlockIds } from './blocks.js';
 import { buildAnimations } from './animations.js';
 import { decimateProceduralAnimations } from './procedural-decimation.js';
 
@@ -122,7 +122,11 @@ export function addLegacyRuntimeLayers(records, runtime) {
       if (!record) { record = { id, layers: {} }; records.push(record); byId.set(id, record); }
       if (!record.layers[name]) record.layers[name] = layer;
       else for (const [bone, part] of Object.entries(layer.root.children)) {
-        if (record.layers[name].root.children[bone]) continue;
+        const existing = record.layers[name].root.children[bone];
+        if (existing) {
+          if (id === 'minecraft:lectern') existing.pose = part.pose;
+          continue;
+        }
         const texture = part.texture ?? layer.texture;
         if (sameTexture(record.layers[name].texture, texture)) delete part.texture;
         else part.texture = texture;
@@ -159,15 +163,13 @@ async function main(args) {
   const { cache, offline } = options;
   const { entry, metadata, directory } = await loadVersion('1.16.5', cache, offline);
   const clientJar = await downloadClient(metadata, directory, offline);
-  const runtime = await extractLegacyData(options);
+  const runtime = await extractLegacyData({ ...options, metadata, clientJar });
   addLegacyRuntimeLayers(records, runtime.models);
-  const blocks = await addLegacyBlockLayers(records, await listBlockIds(clientJar));
+  const blockIds = await listBlockIds(clientJar);
+  const blockFamilies = await addLegacyBlockLayers(records, blockIds);
   const textures = await addTextures(records, { jar: clientJar, version: entry.id, cache, offline, validate: false });
-  applyLegacyPasses(records);
-  const byId = new Map(records.map(record => [record.id, record]));
-  for (const block of Object.values(blocks)) for (const part of block.parts) {
-    if (part.textureLocation === byId.get(part.model).layers[part.layer ?? 'main'].textureLocation) delete part.textureLocation;
-  }
+  await applyLegacyPasses(records);
+  const blocks = expandBlocks(blockFamilies, records, blockIds);
   const missing = new Map(textures.report.missing.map(finding => [`${finding.id}#${finding.layer}`, finding]));
   textures.report.missing = records.flatMap(record => Object.entries(record.layers).filter(([, layer]) => !layer.textureLocation)
     .map(([layer]) => ['inner_armor', 'outer_armor', 'armor', 'decor'].includes(layer)
@@ -177,7 +179,6 @@ async function main(args) {
   textures.withTexture = records.filter(record => Object.values(record.layers).some(layer => layer.textureLocation)).length;
   textures.withoutTexture = records.length - textures.withTexture;
   await applyTransforms(records, entry.id);
-  placeLegacyBanners(records);
   const passTextures = records.filter(record => record.passes).map(record => ({ id: record.id,
     layers: Object.fromEntries(record.passes.filter(pass => pass.textureLocation).map((pass, index) => [index, pass])) }));
   await validateTextures([...records, ...blockTextureRecords(blocks), ...passTextures], entry.id, new Map(), { cache, offline });

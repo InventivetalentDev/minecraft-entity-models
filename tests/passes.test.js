@@ -96,7 +96,7 @@ test('passes.json uses known modes and gives evidence for every entry', async ()
     for (const mode of [...Object.values(entry.layers ?? {}), ...(entry.passes ?? []).flatMap(pass => pass.render ?? [])]) assert.ok(Object.hasOwn(RENDER_MODES, mode), mode);
     for (const pass of entry.passes ?? []) assert.match(pass.textureLocation ?? 'minecraft:textures/x.png', /^minecraft:textures\/[a-z0-9_/]+\.png$/);
   }
-  for (const version of ['1.17.1', '1.20.1', '1.21.11']) {
+  for (const version of ['1.16.5', '1.17.1', '1.20.1', '1.21.11']) {
     const ids = ['piglin', 'piglin_brute', 'zombified_piglin', 'wither_skull', 'trident', 'bat'];
     const records = ids.map(id => model(`minecraft:${id}`));
     await applyPasses(records, version, { entries });

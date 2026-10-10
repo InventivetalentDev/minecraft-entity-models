@@ -30,6 +30,7 @@ const ADULT_MODELS = {
 const BABY_MODELS = {
   'animal.bee.BeeModel': 'animal.bee.BabyBeeModel',
   'animal.chicken.ChickenModel': 'animal.chicken.BabyChickenModel',
+  'animal.chicken.ColdChickenModel': 'animal.chicken.BabyChickenModel',
   'animal.cow.CowModel': 'animal.cow.BabyCowModel',
   'animal.cow.ColdCowModel': 'animal.cow.BabyCowModel',
   'animal.cow.WarmCowModel': 'animal.cow.BabyCowModel',
@@ -42,6 +43,7 @@ const BABY_MODELS = {
   'animal.llama.LlamaModel': 'animal.llama.BabyLlamaModel',
   'animal.panda.PandaModel': 'animal.panda.BabyPandaModel',
   'animal.pig.PigModel': 'animal.pig.BabyPigModel',
+  'animal.pig.ColdPigModel': 'animal.pig.BabyPigModel',
   'animal.polarbear.PolarBearModel': 'animal.polarbear.BabyPolarBearModel',
   'animal.sheep.SheepModel': 'animal.sheep.BabySheepModel',
   'animal.squid.SquidModel': 'animal.squid.BabySquidModel',
@@ -107,8 +109,6 @@ export function proceduralAnimations26(requests) {
       { ...clip, frames: clip.frames.map(frame => ({ ...frame, values: bookStates(frame.values),
         ...(frame.pre ? { pre: bookStates(frame.pre) } : {}) })) },
     ])) : request.clips;
-    const parameters = className === 'animal.feline.CatModel'
-      ? ['net.minecraft.client.renderer.entity.state.FelineRenderState'] : request.parameters;
-    return [...groups].map(([type, models]) => ({ ...request, class: MODEL + type, models, parameters, clips }));
+    return [...groups].map(([type, models]) => ({ ...request, class: MODEL + type, models, clips }));
   });
 }

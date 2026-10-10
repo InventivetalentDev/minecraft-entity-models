@@ -24,6 +24,7 @@ import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.block.entity.BlockEntityRenderDispatcher;
 import net.minecraft.client.render.block.entity.ShulkerBoxBlockEntityRenderer;
 import net.minecraft.client.render.entity.EntityRenderDispatcher;
+import net.minecraft.client.render.entity.model.BookModel;
 import net.minecraft.client.render.entity.model.ShulkerEntityModel;
 import net.minecraft.entity.EntityType;
 import net.minecraft.resource.ReloadableResourceManagerImpl;
@@ -55,6 +56,8 @@ public class LegacyModels {
         boolean named;
     }
 
+    private record PoseCopy(Object target, Method method, Map<ModelPart, float[]> sourceDefaults) {}
+
     public static void main(String[] args) throws Exception {
         if (args.length != 2) throw new IllegalArgumentException("Usage: LegacyModels.java INPUT OUTPUT");
         work = Path.of(args[1]).toAbsolutePath().getParent();
@@ -75,7 +78,9 @@ public class LegacyModels {
         }
         for (var entry : BLOCKS.entrySet()) {
             Class<?> type = Class.forName("net.minecraft.client.render.block.entity." + entry.getValue() + "BlockEntityRenderer");
-            addRenderer(models, "minecraft:" + entry.getKey(), type.getConstructor(BlockEntityRenderDispatcher.class).newInstance(new Object[] {null}));
+            Object renderer = type.getConstructor(BlockEntityRenderDispatcher.class).newInstance(new Object[] {null});
+            if (entry.getKey().equals("lectern")) ((BookModel) field(renderer, "book")).setPageAngles(0, 0.1f, 0.9f, 1.2f);
+            addRenderer(models, "minecraft:" + entry.getKey(), renderer);
         }
         addRenderer(models, "minecraft:shulker_box", new ShulkerBoxBlockEntityRenderer(new ShulkerEntityModel<>(), null));
         Class<?> skullRenderer = Class.forName("net.minecraft.client.render.block.entity.SkullBlockEntityRenderer");
@@ -122,12 +127,18 @@ public class LegacyModels {
             String layerName = request.has("layer") ? request.get("layer").getAsString() : "main";
             Layer layer = models.get(id).get(layerName);
             if (layer == null) throw new IllegalArgumentException(id + ": missing " + layerName);
-            Object model = layer.models.stream().filter(value -> !request.has("class") || value.getClass().getSimpleName().equals(request.get("class").getAsString())).reduce((previous, next) -> next).orElseThrow();
+            JsonObject copyConfig = request.has("copyPose") ? request.getAsJsonObject("copyPose") : null;
+            Layer source = copyConfig == null ? layer : models.get(id).get(copyConfig.get("sourceLayer").getAsString());
+            if (source == null) throw new IllegalArgumentException(id + ": missing pose source layer");
+            Object model = source.models.stream().filter(value -> !request.has("class") || value.getClass().getSimpleName().equals(request.get("class").getAsString())).reduce((previous, next) -> next).orElseThrow();
+            PoseCopy copy = copyConfig == null ? null : new PoseCopy(layer.models.get(layer.models.size() - 1),
+                model.getClass().getMethod(copyConfig.get("method").getAsString(), Class.forName(copyConfig.get("targetClass").getAsString())),
+                snapshot(source.parts.values()));
             String methodName = request.has("method") ? request.get("method").getAsString() : "setAngles";
             Method method = java.util.Arrays.stream(model.getClass().getMethods())
                 .filter(value -> value.getName().equals(methodName) && !value.isBridge()).findFirst().orElseThrow(() -> new IllegalArgumentException(id + ": missing " + methodName));
             Layer local = new Layer();
-            collect(model, local);
+            collect(copy == null ? model : copy.target(), local);
             if (layer.named) {
                 Map<ModelPart, float[]> owned = snapshot(local.parts.values());
                 local.parts.clear();
@@ -137,10 +148,11 @@ public class LegacyModels {
             Map<ModelPart, float[]> defaults = snapshot(layer.parts.values());
             Map<String, Object> clips = new TreeMap<>();
             for (var entry : request.getAsJsonObject("clips").entrySet()) {
-                try { clips.put(entry.getKey(), sample(model, method, local.parts, defaults, entry.getValue().getAsJsonObject(), request)); }
+                try { clips.put(entry.getKey(), sample(model, method, local.parts, defaults, entry.getValue().getAsJsonObject(), request, copy)); }
                 catch (Throwable error) { throw new IllegalArgumentException(id + " " + entry.getKey() + ": " + error, error); }
             }
             restore(defaults);
+            if (copy != null) restore(copy.sourceDefaults());
             animations.add(object("class", model.getClass().getSimpleName(), "modelClasses", List.of(model.getClass().getName()),
                 "modelIds", List.of(id), "layer", layerName, "animations", clips));
         }
@@ -316,7 +328,7 @@ public class LegacyModels {
             ModelPart.class.getField(COMPONENTS[index]).setFloat(entry.getKey(), entry.getValue()[index]);
     }
 
-    private static Object sample(Object model, Method method, Map<String, ModelPart> parts, Map<ModelPart, float[]> defaults, JsonObject clip, JsonObject request) throws Exception {
+    private static Object sample(Object model, Method method, Map<String, ModelPart> parts, Map<ModelPart, float[]> defaults, JsonObject clip, JsonObject request, PoseCopy copy) throws Exception {
         Map<String, List<List<Object>>> frames = new TreeMap<>();
         for (String name : parts.keySet()) frames.put(name, List.of(new ArrayList<>(), new ArrayList<>()));
         Object entity = method.getParameterTypes()[0].isPrimitive() ? null : entity(request.has("entityClass") ? Class.forName(request.get("entityClass").getAsString()) : previewType(model.getClass(), method.getParameterTypes()[0]));
@@ -324,10 +336,10 @@ public class LegacyModels {
             JsonObject frame = element.getAsJsonObject();
             Map<ModelPart, float[]> before = null;
             if (frame.has("pre")) {
-                pose(model, method, entity, defaults, frame.getAsJsonArray("pre"));
+                evaluate(model, method, entity, defaults, frame.getAsJsonArray("pre"), copy);
                 before = snapshot(parts.values());
             }
-            pose(model, method, entity, defaults, frame.getAsJsonArray("values"));
+            evaluate(model, method, entity, defaults, frame.getAsJsonArray("values"), copy);
             for (var entry : parts.entrySet()) for (int channel = 0; channel < 2; channel++) {
                 List<Float> vector = delta(entry.getValue(), defaults, channel);
                 Map<String, Object> keyframe = object("time", frame.get("time").getAsDouble(), "value", vector, "interpolation", "linear");
@@ -354,6 +366,12 @@ public class LegacyModels {
         }
         if (bones.isEmpty()) throw new IllegalArgumentException("Inputs do not change a named model part");
         return object("length", clip.get("length").getAsDouble(), "loop", clip.get("loop").getAsBoolean(), "bones", bones);
+    }
+
+    private static void evaluate(Object model, Method method, Object entity, Map<ModelPart, float[]> defaults, JsonArray values, PoseCopy copy) throws Exception {
+        if (copy != null) restore(defaults);
+        pose(model, method, entity, copy == null ? defaults : copy.sourceDefaults(), values);
+        if (copy != null) copy.method().invoke(model, copy.target());
     }
 
     private static List<Float> delta(ModelPart part, Map<ModelPart, float[]> defaults, int channel) throws Exception {

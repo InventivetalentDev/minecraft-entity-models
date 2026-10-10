@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { nativeAnimations26, normalizeAnimationRoots26, proceduralAnimations26 } from '../tools/animations-26.js';
 import { extractionAdapter } from '../tools/extraction-adapters.js';
+import { entityAnimations } from '../tools/procedural-entities.js';
 
 test('extraction adapters select only reviewed hooks and sampler dependencies', () => {
   const current = extractionAdapter('26.1.2');
@@ -82,4 +83,22 @@ test('26.1.2 book frames invoke the vanilla openness factory, including disconti
   });
   assert.equal(frame.pre[0].$factory.values[3], 0.4);
   assert.equal(request.clips.open.frames[0].values[0], state);
+});
+
+test('26.1.2 cold variants use baby controllers and retain the shared profile inputs', () => {
+  const requests = entityAnimations(['minecraft:cold_pig', 'minecraft:cold_pig_baby',
+    'minecraft:cold_chicken', 'minecraft:cold_chicken_baby', 'minecraft:cat', 'minecraft:cat_baby']);
+  const before = structuredClone(requests);
+  const result = proceduralAnimations26(requests);
+  for (const [id, controller] of [['cold_pig', 'animal.pig.ColdPigModel'], ['cold_pig_baby', 'animal.pig.BabyPigModel'],
+    ['cold_chicken', 'animal.chicken.ColdChickenModel'], ['cold_chicken_baby', 'animal.chicken.BabyChickenModel'],
+    ['cat', 'animal.feline.AdultCatModel'], ['cat_baby', 'animal.feline.BabyCatModel']]) {
+    const model = `minecraft:${id}`;
+    const original = requests.find(request => request.models.includes(model));
+    const adapted = result.find(request => request.models.includes(model));
+    assert.equal(adapted.class, `net.minecraft.client.model.${controller}`);
+    assert.equal(adapted.parameters, original.parameters);
+    assert.equal(adapted.clips, original.clips);
+  }
+  assert.deepEqual(requests, before);
 });

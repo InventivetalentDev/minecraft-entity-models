@@ -1,4 +1,4 @@
-import { expandBlocks, loadBlockFamilies } from './blocks.js';
+import { loadBlockFamilies } from './blocks.js';
 import { clip, linearTransitions, minecraftSin as sin, minecraftCos as cos } from './procedural-sampling.js';
 
 const f = Math.fround;
@@ -44,18 +44,7 @@ export async function addLegacyBlockLayers(records, blockIds) {
     if (part.model === 'chest') part.layer = 'single';
     if (part.model === 'shulker_box') part.layer = 'shell';
   }
-  return expandBlocks(families, records, blockIds);
-}
-
-export function placeLegacyBanners(records) {
-  for (const model of records) {
-    if (model.id === 'minecraft:standing_banner') model.transform = [
-      { translate: [8, 8, 8] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
-    ];
-    if (model.id === 'minecraft:wall_banner') model.transform = [
-      { translate: [8, Math.fround(-1 / 6) * 16, 8] }, { translate: [0, -5, -7] }, { scale: [0.6666667, -0.6666667, -0.6666667] },
-    ];
-  }
+  return families;
 }
 
 // These renderers change parts directly instead of exposing a model animation method in 1.16.5.

@@ -16,7 +16,8 @@ export const RENDER_MODES = {
   breeze_wind: 'breezeWind',
   water_mask: 'waterMask'
 };
-// Entries without `since` were checked against the 1.17.1, 1.20.1 and 1.21.11 sources; older versions stay unannotated.
+// Entries without `since` were checked against the 1.17.1, 1.20.1 and 1.21.11 sources.
+// Earlier render modes require an explicit version and supporting evidence in passes.json.
 const OLDEST_CHECKED = '1.17';
 const LABEL = /^[a-z0-9]+(_[a-z0-9]+)*$/;
 const TEXTURE = /^[a-z0-9_.-]+:textures\/[a-z0-9_./-]+\.png$/;
@@ -54,14 +55,29 @@ export function validatePasses(model) {
   }
 }
 
+export async function applyRenderModes(records, version, entries) {
+  entries ??= JSON.parse(await readFile(new URL('./passes.json', import.meta.url), 'utf8'));
+  const byId = new Map(records.map(model => [model.id, model]));
+  for (const model of records) for (const layer of Object.values(model.layers)) delete layer.render;
+  for (const entry of entries) {
+    if (!atLeast(version, entry.since ?? OLDEST_CHECKED)) continue;
+    for (const id of entry.ids) {
+      const model = byId.get(`minecraft:${id}`);
+      if (!model) continue;
+      for (const [name, mode] of Object.entries(entry.layers ?? {})) {
+        if (Object.hasOwn(model.layers, name)) model.layers[name].render = mode;
+      }
+    }
+  }
+  return records;
+}
+
 // passes.json lists, per model ID, the layer render modes and the extra draws of the vanilla renderer, with the evidence for each.
 // IDs and layers that a version lacks are skipped. Remaining keyword arguments go to validateTextures.
 export async function applyPasses(records, version, { entries, textureEntries, ...textureOptions } = {}) {
   entries ??= JSON.parse(await readFile(new URL('./passes.json', import.meta.url), 'utf8'));
-  for (const model of records) {
-    delete model.passes;
-    for (const layer of Object.values(model.layers)) delete layer.render;
-  }
+  await applyRenderModes(records, version, entries);
+  for (const model of records) delete model.passes;
   const byId = new Map(records.map(model => [model.id, model]));
   const textured = [];
   for (const entry of entries) {
@@ -70,9 +86,6 @@ export async function applyPasses(records, version, { entries, textureEntries, .
       const model = byId.get(`minecraft:${id}`);
       if (!model) continue;
       if (model.passes) throw new Error(`${model.id}: passes are listed twice`);
-      for (const [name, mode] of Object.entries(entry.layers ?? {})) {
-        if (Object.hasOwn(model.layers, name)) model.layers[name].render = mode;
-      }
       const passes = [];
       for (const { layer: name, textureLocation, render, when, tint } of entry.passes ?? []) {
         if (!Object.hasOwn(model.layers, name)) continue;

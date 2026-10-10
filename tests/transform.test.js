@@ -86,3 +86,19 @@ test('schema requires a transform made of rotate, scale and translate ops', () =
     assert.throws(() => validateModel({ ...model('minecraft:bell'), transform }), /transform/);
   }
 });
+
+test('banner aliases use the renderer placement for their model generation', async () => {
+  const ids = ['standing_banner', 'wall_banner'];
+  const scale = { scale: [0.6666667, -0.6666667, -0.6666667] };
+  for (const version of ['1.16.5', '1.17.1', '1.20.1', '1.21.3']) {
+    assert.deepEqual(await transforms(ids, version), {
+      standing_banner: [{ translate: [8, 8, 8] }, scale],
+      wall_banner: [{ translate: [8, -2.6666667461395264, 8] }, { translate: [0, -5, -7] }, scale],
+    });
+  }
+  for (const version of ['1.21.4', '1.21.11', '26.1.2']) {
+    assert.deepEqual(await transforms(ids, version), {
+      standing_banner: [{ translate: [8, 0, 8] }, scale], wall_banner: [{ translate: [8, 0, 8] }, scale],
+    });
+  }
+});

@@ -1,4 +1,4 @@
-import { validatePasses } from './passes.js';
+import { applyRenderModes, validatePasses } from './passes.js';
 
 // Feature renderer names and textures are from the 1.16.5 Yarn runtime.
 const PASSES = {
@@ -7,9 +7,9 @@ const PASSES = {
   enderman: [{ layer: 'main', textureLocation: 'enderman/enderman_eyes', render: 'eyes' }],
   phantom: [{ layer: 'main', textureLocation: 'phantom_eyes', render: 'eyes' }],
   ender_dragon: [{ layer: 'main', textureLocation: 'enderdragon/dragon_eyes', render: 'eyes' }],
-  creeper: [{ layer: 'armor', textureLocation: 'creeper/creeper_armor', render: 'energy_swirl', when: 'powered' }],
-  wither: [{ layer: 'armor', textureLocation: 'wither/wither_armor', render: 'energy_swirl', when: 'powered' }],
-  slime: [{ layer: 'outer', textureLocation: 'slime/slime', render: 'translucent' }],
+  creeper: [{ layer: 'armor', textureLocation: 'creeper/creeper_armor', when: 'powered' }],
+  wither: [{ layer: 'armor', textureLocation: 'wither/wither_armor', when: 'powered' }],
+  slime: [{ layer: 'outer', textureLocation: 'slime/slime' }],
   drowned: [{ layer: 'outer', textureLocation: 'zombie/drowned_outer_layer' }],
   stray: [{ layer: 'outer', textureLocation: 'skeleton/stray_overlay' }],
   sheep: [{ layer: 'fur', textureLocation: 'sheep/sheep_fur', when: 'not_sheared', tint: 'wool_color' }],
@@ -23,21 +23,12 @@ const TEXTURES = {
   elder_guardian: 'guardian_elder', iron_golem: 'iron_golem/iron_golem',
 };
 
-export function applyLegacyPasses(records) {
+export async function applyLegacyPasses(records) {
+  await applyRenderModes(records, '1.16.5');
   for (const model of records) {
     const id = model.id.slice(10);
     const main = model.layers.main;
     if (main && TEXTURES[id]) main.textureLocation = `minecraft:textures/entity/${TEXTURES[id]}.png`;
-    if (['bed', 'bed_head', 'bed_foot', 'bell', 'banner', 'standing_banner', 'wall_banner', 'enchanting_table', 'lectern'].includes(id)) {
-      for (const layer of Object.values(model.layers)) layer.render = 'solid';
-    }
-    if (['chest', 'trapped_chest', 'ender_chest', 'double_chest_left', 'double_chest_right'].includes(id)) {
-      for (const layer of Object.values(model.layers)) layer.render = 'cutout_cull';
-    }
-    if (main && ['shulker', 'skeleton_skull', 'wither_skeleton_skull', 'zombie_head', 'creeper_head', 'dragon_skull'].includes(id)) main.render = 'cutout_z_offset';
-    if (id === 'conduit' && model.layers.shell) model.layers.shell.render = 'solid';
-    if (main && id === 'trident') main.render = 'solid';
-    if (main && ['player', 'player_slim', 'piglin', 'piglin_brute', 'zombified_piglin', 'wither_skull'].includes(id)) main.render = 'translucent';
     const passes = [];
     for (const definition of PASSES[id] ?? []) {
       const layer = model.layers[definition.layer];

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { addClassicBlockModels } from '../tools/classic-models.js';
-import { placeLegacyBanners } from '../tools/legacy-blocks.js';
+import { addLegacyBlockLayers } from '../tools/legacy-blocks.js';
 import { expandBlocks, loadBlockFamilies } from '../tools/blocks.js';
 import { applyTransforms } from '../tools/transform.js';
 import { addTextures } from '../tools/textures.js';
@@ -28,7 +28,7 @@ test('classic block models preserve registered geometry and expose renderer visi
   assert.equal(get('standing_banner').layers.flag.root.children.flag.pose.offset[1], -32);
   assert.deepEqual(get('standing_banner').transform, get('banner').transform);
   const legacyBanner = [{ id: 'minecraft:wall_banner' }];
-  placeLegacyBanners(legacyBanner);
+  await applyTransforms(legacyBanner, '1.16.5');
   assert.deepEqual(get('wall_banner').transform, legacyBanner[0].transform);
   assert.equal(get('wall_banner').transform[0].translate[1], -2.6666667461395264);
   const placed = structuredClone(records.map(({ id, transform, layers }) => ({ id, transform,
@@ -53,4 +53,26 @@ test('classic block models preserve registered geometry and expose renderer visi
   const modern = structuredClone(original);
   await addClassicBlockModels(modern, '1.21.11');
   assert.deepEqual(modern, original);
+});
+
+test('legacy block indexes use textures assigned after their geometry aliases exist', async () => {
+  const records = [
+    model('chest', ['singleChest', 'doubleChestLeft', 'doubleChestRight'].flatMap(prefix =>
+      ['Lid', 'Base', 'Latch'].map(part => `${prefix}${part}`))),
+    model('bed', ['field_20813', 'field_20814', 'legs_0', 'legs_1', 'legs_2', 'legs_3']),
+    model('sign', ['field', 'foot']), model('banner', ['pillar', 'crossbar', 'banner']),
+    model('conduit', ['field_20825']), model('shulker_box', ['bottomShell', 'topShell']),
+  ];
+  const blockIds = new Set(['minecraft:chest', 'minecraft:shulker_box', 'minecraft:oak_sign']);
+  const families = await addLegacyBlockLayers(records, blockIds);
+  const get = id => records.find(record => record.id === `minecraft:${id}`);
+  get('chest').layers.single.textureLocation = 'minecraft:textures/entity/chest/normal.png';
+  get('shulker_box').layers.shell.textureLocation = 'minecraft:textures/entity/shulker/shulker.png';
+  get('sign/standing/oak').layers.main.textureLocation = 'minecraft:textures/entity/signs/oak.png';
+  const blocks = expandBlocks(families, records, blockIds);
+  assert.deepEqual(blocks['minecraft:shulker_box'].parts, [{ model: 'minecraft:shulker_box', layer: 'shell' }]);
+  assert.deepEqual(blocks['minecraft:oak_sign'].parts, [{ model: 'minecraft:sign/standing/oak' }]);
+  const singleChest = blocks['minecraft:chest'].parts.find(part => part.layer === 'single');
+  assert.equal(singleChest.model, 'minecraft:chest');
+  assert.equal(singleChest.textureLocation, undefined);
 });
