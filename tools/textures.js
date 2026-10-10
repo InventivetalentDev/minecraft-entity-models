@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stableStringify } from './lib.js';
+import { versionTexture } from './texture-paths.js';
+import { adultModelId, isBabyModel } from './model-ids.js';
+import { javaTool, listJar } from './runtime.js';
 
 const key = (id, layer) => `${id}#${layer}`;
-const javaTool = name => process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', name) : name;
 
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
@@ -75,7 +77,7 @@ export function applyStemTextures(textures, records, sources = new Map()) {
   }
   const missing = new Map();
   for (const model of records) {
-    const name = model.id.split(':')[1].replace(/_baby$/, '');
+    const name = adultModelId(model.id).split(':')[1];
     for (const [layer, value] of Object.entries(model.layers)) {
       if (value.textureLocation) continue;
       const stem = layer === 'main' ? name : `${name}_${layer}`;
@@ -93,36 +95,50 @@ export function applyStemTextures(textures, records, sources = new Map()) {
   return missing;
 }
 
+export function applyVariantTextures(variants, records, sources = new Map()) {
+  const grouped = new Map();
+  for (const { name, variant, data } of variants) {
+    const options = grouped.get(name) || [];
+    options.push({ variant, data });
+    grouped.set(name, options);
+  }
+  const preference = name => name === 'temperate' ? 0 : name === 'pale' ? 1 : 2;
+  for (const [name, options] of grouped) {
+    options.sort((a, b) => preference(a.variant) - preference(b.variant) || a.variant.localeCompare(b.variant, 'en'));
+    for (const model of records) {
+      const baby = isBabyModel(model.id);
+      const id = adultModelId(model.id);
+      const option = id === `minecraft:${name}` ? options[0]
+        : options.find(({ data }) => data.model && id === `minecraft:${data.model}_${name}`);
+      if (!option) continue;
+      const { data } = option;
+      for (const layer of ['main', 'baby']) {
+        if (!model.layers[layer]) continue;
+        const babyAsset = baby || layer === 'baby'
+          ? data.baby_asset_id ?? data.baby_assets?.wild : undefined;
+        const asset = babyAsset ?? data.asset_id ?? data.assets?.wild;
+        if (typeof asset !== 'string') continue;
+        const [namespace, assetPath] = asset.includes(':') ? asset.split(':') : ['minecraft', asset];
+        model.layers[layer].textureLocation = `${namespace}:textures/${assetPath}.png`;
+        sources.set(key(model.id, layer), babyAsset ? 'baby variant' : 'variant');
+      }
+    }
+  }
+}
+
 async function variants(jar, entries, records, sources) {
   const files = entries.filter(entry => /^data\/minecraft\/[a-z0-9_]+_variant\/[a-z0-9_.-]+\.json$/.test(entry));
   if (!files.length) return;
   const directory = await mkdtemp(path.join(tmpdir(), 'minecraft-model-variants-'));
   try {
     await run(javaTool('jar'), ['xf', path.resolve(jar), ...files], directory);
-    const grouped = new Map();
+    const variants = [];
     for (const file of files.sort()) {
       const [, name, variant] = /^data\/minecraft\/([a-z0-9_]+)_variant\/([a-z0-9_.-]+)\.json$/.exec(file);
       const data = JSON.parse(await readFile(path.join(directory, file), 'utf8'));
-      const asset = data.asset_id ?? data.assets?.wild;
-      const options = grouped.get(name) || [];
-      options.push({ variant, asset });
-      grouped.set(name, options);
+      variants.push({ name, variant, data });
     }
-    const preference = name => name === 'temperate' ? 0 : name === 'pale' ? 1 : 2;
-    for (const [name, options] of grouped) {
-      options.sort((a, b) => preference(a.variant) - preference(b.variant) || a.variant.localeCompare(b.variant, 'en'));
-      const asset = options[0].asset;
-      if (typeof asset !== 'string') continue;
-      const [namespace, assetPath] = asset.includes(':') ? asset.split(':') : ['minecraft', asset];
-      const textureLocation = `${namespace}:textures/${assetPath}.png`;
-      for (const model of records.filter(model => model.id === `minecraft:${name}` || model.id === `minecraft:${name}_baby`)) {
-        for (const layer of ['main', 'baby']) {
-          if (!model.layers[layer]) continue;
-          model.layers[layer].textureLocation = textureLocation;
-          sources.set(key(model.id, layer), 'variant');
-        }
-      }
-    }
+    applyVariantTextures(variants, records, sources);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -156,11 +172,11 @@ async function equipment(jar, entries, records, sources) {
   }
 }
 
-export async function extractTextures({ jar, records, modelLayers }) {
+export async function extractTextures({ jar, records, modelLayers, entries: listed }) {
   let result = { report: { pairings: [], unpaired: [] }, sources: new Map() };
   let entries = [];
   if (modelLayers) {
-    entries = (await run(javaTool('jar'), ['tf', jar])).trim().split(/\r?\n/);
+    entries = listed ?? await listJar(jar);
     const classes = entries.filter(entry => /^net\/minecraft\/client\/renderer\/(?:entity|blockentity)\/.*\.class$/.test(entry))
       .map(entry => entry.slice(0, -6).replaceAll('/', '.')).sort();
     const dumps = [];
@@ -175,6 +191,8 @@ export async function extractTextures({ jar, records, modelLayers }) {
     await variants(jar, entries, records, result.sources);
     await equipment(jar, entries, records, result.sources);
   }
+  result.textureEntries = new Set(entries.filter(entry => /^assets\/[^/]+\/textures\/.+\.png$/.test(entry))
+    .map(entry => entry.replace(/^assets\/([^/]+)\//, '$1:')));
   return result;
 }
 
@@ -245,8 +263,8 @@ export function inheritBabyTextures(records, sources) {
   for (const model of [...records].sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id, 'en'))) {
     for (const [layer, value] of Object.entries(model.layers)) {
       const location = key(model.id, layer);
-      if (['override', 'null override'].includes(sources.get(location))) continue;
-      const parent = model.id.endsWith('_baby') ? byId.get(model.id.slice(0, -5)) : layer === 'baby' ? model : null;
+      if (['override', 'null override', 'baby variant'].includes(sources.get(location))) continue;
+      const parent = isBabyModel(model.id) ? byId.get(adultModelId(model.id)) : layer === 'baby' ? model : null;
       const parentLayer = parent === model ? 'main' : layer;
       const parentValue = parent?.layers[parentLayer];
       if (!parentValue) continue;
@@ -309,12 +327,17 @@ export async function validateTextures(records, version, sources, { cache = '.ca
   }
 }
 
-export async function addTextures(records, { jar, modelLayers, version, cache, offline } = {}) {
+export async function addTextures(records, { jar, entries, modelLayers, version, cache, offline, validate = true } = {}) {
   for (const model of records) for (const value of Object.values(model.layers)) delete value.textureLocation;
-  const { report, sources, missing } = jar ? await extractTextures({ jar, records, modelLayers })
+  const { report, sources, missing, textureEntries } = jar ? await extractTextures({ jar, entries, records, modelLayers })
     : { report: { pairings: [], unpaired: [] }, sources: new Map(), missing: applyStemTextures([], records) };
   await applyOverrides(records, { sources });
   inheritBabyTextures(records, sources);
+  // Overrides name the paths of the release they were reviewed on, so they take the moved and baby assets too.
+  for (const model of records) for (const [layer, value] of Object.entries(model.layers)) {
+    if (value.textureLocation) value.textureLocation = versionTexture(value.textureLocation,
+      isBabyModel(model.id) || layer === 'baby', textureEntries);
+  }
   report.missing = [];
   for (const model of [...records].sort((a, b) => a.id.localeCompare(b.id, 'en'))) {
     for (const [layer, value] of Object.entries(model.layers).sort(([a], [b]) => a.localeCompare(b, 'en'))) {
@@ -327,7 +350,7 @@ export async function addTextures(records, { jar, modelLayers, version, cache, o
       report.missing.push({ id: model.id, layer, ...reason });
     }
   }
-  await validateTextures(records, version, sources, { cache, offline });
+  if (validate) await validateTextures(records, version, sources, { cache, offline });
   const withTexture = records.filter(model => Object.values(model.layers).some(layer => layer.textureLocation)).length;
-  return { report, withTexture, withoutTexture: records.length - withTexture };
+  return { report, withTexture, withoutTexture: records.length - withTexture, textureEntries };
 }

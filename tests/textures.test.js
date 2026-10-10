@@ -3,9 +3,72 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyEquipmentTextures, applyOverrides, applyStemTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
+import { addTextures, applyEquipmentTextures, applyOverrides, applyStemTextures, applyVariantTextures, inheritBabyTextures, pairTextures, validateTextures } from '../tools/textures.js';
+import { versionTexture } from '../tools/texture-paths.js';
 
 const model = id => ({ id: `minecraft:${id}`, layers: { main: {} } });
+
+test('variant fields select separate baby assets and cold and warm geometry', () => {
+  const records = ['cow', 'cow_baby', 'cold_cow', 'cold_cow_baby', 'warm_cow'].map(model);
+  const variants = ['temperate', 'cold', 'warm'].map(variant => ({ name: 'cow', variant, data: {
+    asset_id: `minecraft:entity/cow/cow_${variant}`, baby_asset_id: `minecraft:entity/cow/cow_${variant}_baby`,
+    ...(variant === 'temperate' ? {} : { model: variant }),
+  } }));
+  const sources = new Map();
+  applyVariantTextures(variants, records, sources);
+  inheritBabyTextures(records, sources);
+  assert.deepEqual(records.map(record => record.layers.main.textureLocation),
+    ['temperate', 'temperate_baby', 'cold', 'cold_baby', 'warm'].map(name => `minecraft:textures/entity/cow/cow_${name}.png`));
+  const older = ['cow', 'cow_baby', 'cold_cow'].map(model);
+  applyVariantTextures(variants.map(({ data, ...variant }) => {
+    const { baby_asset_id, ...adultData } = data;
+    return { ...variant, data: adultData };
+  }), older);
+  assert.equal(older[1].layers.main.textureLocation, older[0].layers.main.textureLocation);
+  assert.equal(older[2].layers.main.textureLocation, 'minecraft:textures/entity/cow/cow_cold.png');
+});
+
+test('texture paths use moved and baby assets only when the jar contains them', () => {
+  const cat = 'minecraft:textures/entity/cat/black.png';
+  const adult = 'minecraft:textures/entity/cat/cat_black.png';
+  const baby = 'minecraft:textures/entity/cat/cat_black_baby.png';
+  const entries = new Set([adult, baby, 'minecraft:textures/entity/sniffer/snifflet.png']);
+  assert.equal(versionTexture(cat, true, entries), baby);
+  assert.equal(versionTexture(cat, false, entries), adult);
+  assert.equal(versionTexture(cat, true), cat);
+  assert.equal(versionTexture(cat, true, new Set([cat, ...entries])), cat);
+  assert.equal(versionTexture('minecraft:textures/entity/sniffer/sniffer.png', true, entries),
+    'minecraft:textures/entity/sniffer/snifflet.png');
+  const eyes = 'minecraft:textures/entity/spider/spider_eyes.png';
+  assert.equal(versionTexture('minecraft:textures/entity/spider_eyes.png', false, new Set([eyes])), eyes);
+});
+
+test('explicit overrides take the moved and baby assets of a later release', async () => {
+  const records = ['cat', 'cat_baby'].map(model);
+  // Without a jar no texture entries are known, so the overrides stay as written.
+  await addTextures(records, { validate: false });
+  assert.equal(records[1].layers.main.textureLocation, 'minecraft:textures/entity/cat/black.png');
+  const entries = new Set(['minecraft:textures/entity/cat/cat_black.png', 'minecraft:textures/entity/cat/cat_black_baby.png']);
+  assert.equal(versionTexture(records[0].layers.main.textureLocation, false, entries), 'minecraft:textures/entity/cat/cat_black.png');
+  assert.equal(versionTexture(records[1].layers.main.textureLocation, true, entries), 'minecraft:textures/entity/cat/cat_black_baby.png');
+});
+
+test('baby models retain suffixes when matching stems and inheriting textures', async () => {
+  const records = ['happy_ghast_ropes', 'happy_ghast_baby_ropes', 'villager_no_hat', 'villager_baby_no_hat',
+    'wolf_armor', 'wolf_baby_armor', 'wolf_babylon'].map(model);
+  const sources = new Map();
+  applyStemTextures(['textures/entity/ghast/happy_ghast_ropes.png'], records, sources);
+  assert.equal(records[1].layers.main.textureLocation, records[0].layers.main.textureLocation);
+  await applyOverrides(records, { sources, overrides: {
+    villager_no_hat: 'minecraft:textures/entity/villager/villager.png', wolf_armor: null,
+  } });
+  records[5].layers.main.textureLocation = 'minecraft:textures/entity/unwanted.png';
+  inheritBabyTextures(records, sources);
+  assert.equal(records[3].layers.main.textureLocation, records[2].layers.main.textureLocation);
+  assert.equal(records[5].layers.main.textureLocation, undefined);
+  assert.equal(sources.get('minecraft:wolf_baby_armor#main'), 'inherited null override');
+  assert.equal(records[6].layers.main.textureLocation, undefined);
+});
 
 test('javap pairing ignores armor sets, resolves aliases, and shares one texture across layers', async () => {
   const fixture = await readFile(new URL('./fixtures/renderers.javap.txt', import.meta.url), 'utf8');
@@ -108,6 +171,11 @@ test('baby textures follow final parent overrides while preserving explicit excl
 test('texture validation rejects missing assets and requires prior HEAD success offline', async t => {
   const cache = await mkdtemp(path.join(tmpdir(), 'model-texture-test-'));
   t.after(() => rm(cache, { recursive: true, force: true }));
+  const options = { version: '1.21.11', cache, offline: true };
+  await assert.rejects(addTextures([model('arrow')], options), /offline texture cache miss/);
+  const deferred = [model('arrow')];
+  assert.equal((await addTextures(deferred, { ...options, validate: false })).withTexture, 1);
+  assert.equal(deferred[0].layers.main.textureLocation, 'minecraft:textures/entity/projectiles/arrow.png');
   const records = [model('cow')];
   records[0].layers.main.textureLocation = 'minecraft:textures/entity/cow/cow.png';
   const sources = new Map([['minecraft:cow#main', 'override']]);

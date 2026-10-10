@@ -91,7 +91,7 @@ test('decimation retains pre frames and curve shapes around discontinuities', ()
 
 test('procedural profiles require the reviewed version and an available model', () => {
   const records = [{ id: 'minecraft:chest' }, { id: 'minecraft:bell' }, { id: 'other:chest' }];
-  for (const version of ['1.17.1', '1.20.1', '1.21.10', '1.21.12']) {
+  for (const version of ['1.16.5', '1.21.10', '1.21.12', '26.1.1', '26.1.3', '26.2']) {
     assert.deepEqual(proceduralAnimations(version, records), []);
   }
   assert.deepEqual(proceduralAnimations('1.21.11', []), []);

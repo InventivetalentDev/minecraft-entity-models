@@ -1,10 +1,14 @@
 import { blockAnimations } from './procedural-blocks.js';
 import { entityAnimations } from './procedural-entities.js';
 import { humanoidAnimations } from './procedural-humanoids.js';
+import { classicAnimations } from './procedural-classic.js';
+import { extractionAdapter } from './extraction-adapters.js';
 
 export function proceduralAnimations(version, records) {
-  // Model methods, state fields, and controller timings are reviewed against this release.
-  if (version !== '1.21.11') return [];
+  // Model methods, state fields, and controller timings are reviewed per release.
+  const { procedural, proceduralRequests } = extractionAdapter(version);
+  if (!procedural) return [];
+  if (procedural === 'classic') return classicAnimations(version, records);
   const ids = records.map(record => record.id);
   const entities = entityAnimations(ids);
   const requests = [...blockAnimations(ids), ...entities, ...humanoidAnimations(ids, records)];
@@ -19,5 +23,5 @@ export function proceduralAnimations(version, records) {
       }
     }
   }
-  return requests;
+  return proceduralRequests(requests);
 }

@@ -69,6 +69,24 @@ test('validates render modes and passes', () => {
   }
 });
 
+test('26.1.2 passes use moved eyes and baby overlay textures from the client', async t => {
+  const cache = await mkdtemp(path.join(tmpdir(), 'entity-models-passes-'));
+  t.after(() => rm(cache, { recursive: true, force: true }));
+  const records = [model('minecraft:spider'), model('minecraft:wolf_baby')];
+  const babyCollar = 'minecraft:textures/entity/wolf/wolf_collar_baby.png';
+  await applyPasses(records, '26.1.2', { cache, textureEntries: new Set([babyCollar, 'minecraft:textures/entity/spider/spider_eyes.png']),
+    fetch: async () => ({ ok: true, status: 200 }) });
+  assert.equal(records[0].passes[0].textureLocation, 'minecraft:textures/entity/spider/spider_eyes.png');
+  assert.equal(records[1].passes[0].textureLocation, babyCollar);
+  const suffix = [model('minecraft:villager_baby_no_hat')];
+  const babyTexture = 'minecraft:textures/entity/villager/villager_baby.png';
+  await applyPasses(suffix, '26.1.2', { cache, textureEntries: new Set([babyTexture]),
+    entries: [{ ids: ['villager_baby_no_hat'], passes: [{ layer: 'main',
+      textureLocation: 'minecraft:textures/entity/villager/villager.png' }] }],
+    fetch: async () => ({ ok: true, status: 200 }) });
+  assert.equal(suffix[0].passes[0].textureLocation, babyTexture);
+});
+
 test('passes.json uses known modes and gives evidence for every entry', async () => {
   const entries = JSON.parse(await readFile(new URL('../tools/passes.json', import.meta.url), 'utf8'));
   const ids = entries.flatMap(entry => entry.ids);
@@ -77,5 +95,12 @@ test('passes.json uses known modes and gives evidence for every entry', async ()
     assert.ok(entry.evidence && (entry.layers || entry.passes), entry.ids.join());
     for (const mode of [...Object.values(entry.layers ?? {}), ...(entry.passes ?? []).flatMap(pass => pass.render ?? [])]) assert.ok(Object.hasOwn(RENDER_MODES, mode), mode);
     for (const pass of entry.passes ?? []) assert.match(pass.textureLocation ?? 'minecraft:textures/x.png', /^minecraft:textures\/[a-z0-9_/]+\.png$/);
+  }
+  for (const version of ['1.16.5', '1.17.1', '1.20.1', '1.21.11']) {
+    const ids = ['piglin', 'piglin_brute', 'zombified_piglin', 'wither_skull', 'trident', 'bat'];
+    const records = ids.map(id => model(`minecraft:${id}`));
+    await applyPasses(records, version, { entries });
+    assert.deepEqual(records.map(record => record.layers.main.render),
+      ['translucent', 'translucent', 'translucent', 'translucent', 'solid', version === '1.21.11' ? 'cutout_cull' : undefined]);
   }
 });

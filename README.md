@@ -35,7 +35,7 @@ Models use vanilla model space. Top-level `transform` lists the operations the v
 
 `transform` describes the default state: an entity with yaw 0, default size and no animation, or a block entity with zero facing rotation and its animation at rest. State-dependent operations are evaluated there and dropped when they become identity; constant operations stay. Operations that a renderer applies to single parts are not included, such as the banner flag offset and the end crystal glass and cube before 1.21.2, and the conduit eye and cage. After `transform`, a block-entity model is in block space (0 to 16 on each axis), and a block state adds its Y rotation about the vertical axis through the block centre.
 
-A layer's optional `render` names the vanilla render type that draws its geometry; it is omitted for `cutout`. Top-level `passes` lists, in draw order, the extra draws that the vanilla renderer adds on top of `main`: `{"layer", "textureLocation"?, "render"?, "when"?, "tint"?}`. `layer` names a layer of the same file, and a pass on `main` draws that geometry again. `textureLocation` and `render` are present only when they differ from the layer's own. Without `when`, vanilla attempts the draw in every state; otherwise `when` labels the entity state that enables it (`powered`, `tamed`, `not_sheared`, `dyed`, `eyes_glowing`, `tendrils_active`, `not_underwater`). `tint` labels a state colour that multiplies the texture (`wool_color`, `collar_color`). Alpha animation, equipment, held items, and passes with a texture chosen at runtime are not listed. `tools/passes.json` holds the reviewed entries with their evidence; `since` limits an entry to that version and later, and 1.16.5 is not annotated.
+A layer's optional `render` names the vanilla render type that draws its geometry; it is omitted for `cutout`. Top-level `passes` lists, in draw order, the extra draws that the vanilla renderer adds on top of `main`: `{"layer", "textureLocation"?, "render"?, "when"?, "tint"?}`. `layer` names a layer of the same file, and a pass on `main` draws that geometry again. `textureLocation` and `render` are present only when they differ from the layer's own. Without `when`, vanilla attempts the draw in every state; otherwise `when` labels the entity state that enables it (`powered`, `tamed`, `not_sheared`, `dyed`, `eyes_glowing`, `tendrils_active`, `not_underwater`). `tint` labels a state colour that multiplies the texture (`wool_color`, `collar_color`). Alpha animation, equipment, held items, and passes with a texture chosen at runtime are not listed. `tools/passes.json` holds the reviewed entries with their evidence; `since` limits an entry to that version and later. The 1.16.5 feature layers use `tools/legacy-passes.js`.
 
 | `render` | Vanilla render type | Meaning |
 |---|---|---|
@@ -82,13 +82,13 @@ The index holds only what depends on the block and its state. Apply it after the
 
 Shulker boxes have no `rotation`: their `facing` is not a rotation about the vertical axis, and the entry describes `facing=up`. Banner entries carry no colour because the base colour is a tint. Lid angles, animation, player skins, banner patterns, pot sherds and sign text are not part of the index.
 
-Block families are described in `tools/block-families.json` and expanded per version by `tools/blocks.js`. Parts whose model is missing in a version and blocks without a blockstate file in that version are left out.
+Block families are described in `tools/block-families.json` and expanded per version by `tools/blocks.js`. Parts whose model is missing in a version and blocks without a blockstate file in that version are left out. Older renderers share geometry between block states: extraction adds separate standing and wall signs, banner layers, and shulker-box geometry while retaining the original model IDs. In 1.20.1 it also separates hanging-sign attachment shapes.
 
 ## Animations
 
-Animations are in a separate tree: `animations/minecraft/<id>.json`, with its own `_list.json` files. Extraction reads vanilla keyframe definitions (`net.minecraft.client.animation.definitions`, Minecraft 1.19+) and samples reviewed procedural model poses in 1.21.11. A version without extracted animations has no `animations` directory.
+Animations are in a separate tree: `animations/minecraft/<id>.json`, with its own `_list.json` files. Extraction reads vanilla keyframe definitions (`net.minecraft.client.animation.definitions`, Minecraft 1.19+) and samples reviewed procedural model poses in 1.16.5, 1.17.1, 1.20.1, 1.21.11, and 26.1.2. A version without extracted animations has no `animations` directory.
 
-Keyframe definitions map to each model ID whose `main` layer is drawn by a model class that uses the definitions, or by a subclass of one. Procedural profiles name their model IDs and layers explicitly.
+Keyframe definitions map to each model ID whose `main` layer is drawn by a model class that uses the definitions, or by a subclass of one. In 26.1.2, reviewed associations distinguish adult and baby definitions that accept the same layer shapes. Procedural profiles name their model IDs and layers explicitly.
 
 ```json
 {
@@ -117,13 +117,33 @@ A 1.21.11 keyframe holds a value to arrive at and a value to leave from (1.20.1 
 
 ### Procedural poses
 
-`tools/ProceduralAnimations.java` invokes the game's model methods with inputs from the procedural profiles. It resets each part to its baked pose before each sample and exports the difference from that pose, including nonzero resting offsets. The existing keyframe definitions stay unchanged. Profiles are limited to the reviewed 1.21.11 classes, state fields, and controller timings; other versions still extract their native definitions.
+`tools/ProceduralAnimations.java` invokes the game's model methods with inputs from the procedural profiles. For stateless clips, it resets each part to its baked pose before each sample. It exports the difference from the baked pose, including nonzero resting offsets. The existing keyframe definitions stay unchanged. Profiles select reviewed classes, state fields, and controller timings per release; other versions still extract their native definitions.
 
 `tools/procedural-blocks.js` covers chest and double-chest lids, shulker boxes, directional bell swings, standing and wall banners, dragon and piglin heads, and enchanting books. Chest, box, and book opening and closing take about 0.5 seconds. Chest inputs include the renderer's cubic easing. Bell swings end at 2.5 seconds with a jump to rest. Banner sway targets the `flag` layer. Book clips hold page-flip input at zero; their idle phase begins where the opening clip ends.
 
 `tools/procedural-entities.js` covers reviewed mob cycles and transitions, including fish swimming, wing and tentacle motion, boat rowing, rabbit jumps, evoker fangs, shulker lids, sheep eating, wolf shaking, and golem and ravager actions. `tools/procedural-humanoids.js` adds walking previews for players, skeletons, zombies, piglins, endermen, and illagers. Shared geometry variants and baby models receive their own samples. The profiles specify which state inputs drive each clip and which remain fixed.
 
-Armor, outer clothing, and sheep wool have separate clips whose names end in the layer name, such as `walk_cycle_boots` and `eat_wool`. Play these alongside the corresponding main-layer clip. Each clip carries its own `layer` and deltas from that layer's baked pose.
+`tools/procedural-classic.js` adapts 1.17.1 and 1.20.1 model methods, which read entity getters rather than render-state objects. Reviewed fixtures supply those values without creating a world. Block renderer formulas live in `tools/procedural-classic-blocks.js`. Axolotl poses retain vanilla's rotation history within each finite sample and start each clip with an empty cache. `tools/animations-26.js` selects the renamed adult classes and separate baby models in 26.1.2; models that switched to native definitions retain those definitions instead of the earlier procedural clips.
+
+The 1.16.5 runtime supplements the legacy dumps without renaming their existing parts. Where numeric child names cannot identify an animation target uniquely, it adds an `animated` layer with a named hierarchy. Draw it in place of `main`, including any passes that redraw `main`; retain each pass's texture, render mode, condition, and tint. This preserves dragon and phantom eyes and tamed-wolf collars. The two layers are alternative representations of the same model; `animated` is not a render pass.
+
+MineRender's explicit `layer`/`layers` selection omits all passes. To preserve them when using `animated`, first resolve the normal draws with the desired `when` states, then replace only their geometry. For an existing `scene` and a `key` identifying a 1.16.5 wolf:
+
+```js
+const selected = await Entities.getEntity(key, undefined, { when: ['tamed'] });
+const animated = await Entities.getEntity(key, undefined, { layer: 'animated' });
+if (!selected || !animated) throw new Error('Wolf model not found');
+const layers = Object.fromEntries(Object.entries(selected.layers).map(([name, draw]) =>
+  name.split('#')[0] === 'main'
+    ? [name.replace(/^main/, 'animated'), { ...draw, layer: animated.layer }]
+    : [name, draw]));
+const model = { ...selected, ...layers.animated, layers };
+const entity = await scene.addEntity(model, { tints: { collar_color: 0xff0000 } });
+```
+
+The clip's `animated` layer targets both `animated` and `animated#2`, keeping the collar's pose aligned with the body.
+
+Armor, outer clothing, and sheep wool have separate clips whose names end in the layer name, such as `walk_cycle_boots` and `eat_wool`. Play these alongside the corresponding main-layer clip. In 1.16.5, 1.17.1, and 1.20.1, humanoid armor uses vanilla's body-to-armor pose copy and retains the main clip's length and loop setting; piglin armor uses `walk_sample_inner_armor` and `walk_sample_outer_armor`. Each clip carries its own `layer` and deltas from that layer's baked pose.
 
 Times assume 20 game ticks per second. Profiles sample poses at 120–480 samples per second to form a dense linear reference. `tools/procedural-decimation.js` reduces each bone channel using linear and Catmull-Rom interpolation, with a maximum error of 0.01 per axis against that reference (radians for rotation, model units for position, and scale units for scale). The bound includes times between source samples. The first and last frame's times and values, and every explicit `pre` discontinuity, stay exact.
 
@@ -133,13 +153,13 @@ Play each sampled clip as a complete pose relative to the baked model. These cli
 
 Only model-part position, rotation, and scale are sampled. Visibility, renderer pose-stack motion (such as decorated-pot wobble, conduit motion, and book bobbing), camera tracking, randomized behavior, and shader effects remain outside the animation schema. The allay's nested part named `root` cannot be distinguished from the layer root by this bone-name schema. End-crystal quaternion rotations need separate handling at Euler-angle discontinuities. Neither has a procedural profile. Other mixed or state-dependent motions need explicit input profiles; the extractor does not infer a fixed clip by varying every state field.
 
-Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash.
+Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11, and Java 25+ for 26.1.2. Set `JAVA_HOME` to choose a JDK. Downloads are SHA-1 checked; [AutoRenamingTool](https://github.com/neoforged/AutoRenamingTool) 2.0.18 is pinned by hash. The unobfuscated 26.1.2 client is read directly without remapping.
 
 1. Extract Minecraft 1.17+ (add `--cache DIR` to change the cache or `--offline` to use cached downloads):
    ```sh
    node tools/extract.js --version 1.21.11 --output out/1.21.11
    ```
-2. Convert the legacy [entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/entityModels.json) and [block-entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/blockEntityModels.json) into one `main` layer per ID; empty IDs are skipped and unnamed children use numeric keys:
+2. Convert the legacy [entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/entityModels.json) and [block-entity dump](https://raw.githubusercontent.com/InventivetalentDev/MineRender/main/packages/minerender/src/entity/blockEntityModels.json), supplementing missing geometry, render layers, and procedural poses from the 1.16.5 runtime. Existing part names remain intact; unnamed children use numeric keys. The runtime uses pinned Yarn 1.16.5 build 6 mappings. `--cache` holds shared client downloads, libraries, and the checksum-verified mapped jar; `--legacy-cache` selects the Yarn and remapper download directory. `--offline` uses cached downloads:
    ```sh
    node tools/convert-legacy.js entityModels.json blockEntityModels.json --output out/1.16.5
    ```
@@ -150,7 +170,8 @@ Use Node.js 18+ and a JDK: Java 17+ for older releases, Java 21+ for 1.21.11. Se
 
 Extraction and conversion require a new output directory. Run tests with `node --test`.
 
-- 1.16.5: 86 model files.
-- 1.17.1: 126 model files.
-- 1.20.1: 161 model files, 4 animation files.
+- 1.16.5: 132 model files, 84 animation files, 162 sampled clips, 98 block entries.
+- 1.17.1: 145 model files, 87 animation files, 160 sampled clips, 98 block entries.
+- 1.20.1: 219 model files, 105 animation files, 225 clips (27 native and 198 sampled), 129 block entries.
 - 1.21.11: 289 model files, 178 animation files, 408 clips (74 native and 334 sampled). This includes 60 sampled clips in the 20 nested `boat/` and `chest_boat/` files; counting only top-level animation files gives 348 clips (74 native and 274 sampled).
+- 26.1.2: 283 model files, 173 animation files, 405 clips (87 native and 318 sampled), 141 block entries.
