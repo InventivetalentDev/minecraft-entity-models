@@ -1,9 +1,0 @@
-{
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "extract": "node tools/extract.js",
-    "convert-legacy": "node tools/convert-legacy.js",
-    "publish": "node tools/publish.js"
-  }
-}
